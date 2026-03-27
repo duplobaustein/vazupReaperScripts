@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="vazupReaperScripts" commit="c1639e2c36984bc33abffc963eeeda8ae6fbdac4">
+<index version="1" name="vazupReaperScripts" commit="3b4e77d0d8b4849dd8ea20b607fdd3a04969b0bd">
   <category name="MIDI PCs to Markers">
     <reapack name="MIDI_PCs_to_Markers.lua" type="script" desc="MIDI PCs to Markers/Regions">
       <metadata>
@@ -46,15 +46,13 @@
 {\pard \ql \f0 \sa180 \li0 \fi0 \outlinelevel0 \b \fs36 Texas ChainSave\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 A track FX chain manager for REAPER.\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 \outlinelevel1 \b \fs32 Features\par}
-{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Lists all tracks with their insert FX chains in a scrollable table\par}
-{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Checkbox selection with Shift (range), Alt (exclusive) and Ctrl (folder group) modifiers\par}
-{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Save All or Save Selected chains with shared Prefix / Suffix naming\par}
-{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Per Channel mode steps through tracks one by one with individual naming\par}
-{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Conflict resolution: Unique Name, Overwrite or Skip if file already exists\par}
-{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab \par}
-{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Parent / folder tracks highlighted with a white border in the track number column\par}
-{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Configurable output folder\par}
-{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Refresh button preserves existing checkbox selections\sa180\par}
+{\pard \ql \f0 \sa180 \li360 \fi-360 \bullet \tx360\tab Lists all tracks with their insert FX chains in a scrollable table\par}
+{\pard \ql \f0 \sa180 \li360 \fi-360 \bullet \tx360\tab Checkbox selection with Shift (range), Alt (exclusive) and Ctrl (folder group) modifiers\par}
+{\pard \ql \f0 \sa180 \li360 \fi-360 \bullet \tx360\tab Save All or Save Selected chains with shared Prefix / Suffix naming\par}
+{\pard \ql \f0 \sa180 \li360 \fi-360 \bullet \tx360\tab Per Channel mode steps through tracks one by one with individual naming\par}
+{\pard \ql \f0 \sa180 \li360 \fi-360 \bullet \tx360\tab Conflict resolution: Unique Name, Overwrite or Skip if file already exists\par}
+{\pard \ql \f0 \sa180 \li360 \fi-360 \bullet \tx360\tab Parent / folder tracks highlighted with a white border in the track number column\par}
+{\pard \ql \f0 \sa180 \li360 \fi-360 \bullet \tx360\tab Configurable output folder\sa180\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 \outlinelevel1 \b \fs32 Requirements\par}
 {\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab REAPER 6.0 or later\par}
 {\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab js_ReaScriptAPI (optional, for native folder browse dialog)\sa180\par}
