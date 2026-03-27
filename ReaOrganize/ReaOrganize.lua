@@ -7,8 +7,8 @@
 -- @about
 --   # ReaOrganize
 --   A powerful session organizer for REAPER.
---   Assign tracks to named, colored groups, create folder structures,
---   manage send routing, FX chains, panning and presets — all from one GUI.
+--   Assign tracks to named, colored groups, create folder structures, create and 
+--   manage send routing, FX chains, panning and assign FX Chains or Plugins — all from one GUI.
 --
 --   Requires the ReaImGui extension (install via ReaPack:
 --   Extensions > ReaPack > Browse packages > search "ReaImGui").
