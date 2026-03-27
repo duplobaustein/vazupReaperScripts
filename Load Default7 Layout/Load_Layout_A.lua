@@ -10,7 +10,7 @@
 --   Sets TCP and MCP layout to A, B, or C for all tracks in the project.
 --   Compatible with the default Reaper theme.
 
-local layout_name = "Layout A"
+local layout_name = "A"
 
 reaper.PreventUIRefresh(1)
 
