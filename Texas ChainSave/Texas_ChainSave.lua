@@ -16,13 +16,13 @@
 --
 --   ## Features
 --   - Lists all tracks with their insert FX chains in a scrollable table
---   - Checkbox selection with Shift (range), Alt (solo) and Ctrl (folder group) modifiers
+--   - Checkbox selection with Shift (range), Alt (exclusive) and Ctrl (folder group) modifiers
 --   - Save All or Save Selected chains with shared Prefix / Suffix naming
 --   - Per Channel mode steps through tracks one by one with individual naming
 --   - Conflict resolution: Unique Name, Overwrite or Skip if file already exists
---   - Live "Saving..." progress banner during batch saves
+--   -
 --   - Parent / folder tracks highlighted with a white border in the track number column
---   - Configurable output folder with optional js_ReaScriptAPI browse dialog
+--   - Configurable output folder
 --   - Refresh button preserves existing checkbox selections
 --
 --   ## Requirements
