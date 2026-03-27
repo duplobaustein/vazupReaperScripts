@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="vazupReaperScripts" commit="d0d6294d5af23f664284268ee95c099cb1ed1ffd">
+<index version="1" name="vazupReaperScripts" commit="bc17bdf423c1b8f9cb4d99ad5dd77f1c70812d2c">
   <category name="Load Default7 Layout">
     <reapack name="Load_Layout_A.lua" type="script" desc="Set Track Layout (A, B, C)">
       <metadata>
@@ -37,6 +37,25 @@
       <version name="1.0" author="vazupReaperScripts" time="2026-03-27T16:48:46Z">
         <changelog><![CDATA[1.0 - Initial release]]></changelog>
         <source main="main">https://github.com/duplobaustein/vazupReaperScripts/raw/459286ffa192f900c024b756d67492d3cf4116d5/MIDI%20PCs%20to%20Markers/MIDI_PCs_to_Markers.lua</source>
+      </version>
+    </reapack>
+  </category>
+  <category name="Razor Edit Tools">
+    <reapack name="Set Razor End to Mouse Cursor.lua" type="script" desc="Set Razor End to Mouse Cursor">
+      <metadata>
+        <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 \fmodern Courier;}}
+{\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
+\widowctrl\hyphauto
+
+{\pard \ql \f0 \sa180 \li0 \fi0 Sets the end of the razor edit area to the mouse cursor position on the track under the mouse cursor.\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 If a razor area exists anywhere in the session (at or to the left of the cursor), its end is moved to the cursor and the area is expanded vertically to cover all tracks between the razor's track and the track under the mouse.\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 If no razor area exists anywhere, a tiny 5 ms razor area is created on the track under the mouse cursor, ending at the cursor position.\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 Requires the SWS Extension.\par}
+}
+]]></description>
+      </metadata>
+      <version name="1.0" author="vazupReaperScripts" time="2026-03-27T19:23:10Z">
+        <source main="main">https://github.com/duplobaustein/vazupReaperScripts/raw/bc17bdf423c1b8f9cb4d99ad5dd77f1c70812d2c/Razor%20Edit%20Tools/Set%20Razor%20End%20to%20Mouse%20Cursor.lua</source>
       </version>
     </reapack>
   </category>
