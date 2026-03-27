@@ -20,10 +20,9 @@
 --   - Save All or Save Selected chains with shared Prefix / Suffix naming
 --   - Per Channel mode steps through tracks one by one with individual naming
 --   - Conflict resolution: Unique Name, Overwrite or Skip if file already exists
---   -
+--   
 --   - Parent / folder tracks highlighted with a white border in the track number column
 --   - Configurable output folder
---   - Refresh button preserves existing checkbox selections
 --
 --   ## Requirements
 --   - REAPER 6.0 or later
