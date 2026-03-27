@@ -31,7 +31,7 @@
 ]]></description>
         <link rel="website" href="https://github.com/duplobaustein/vazupReaperScripts">GitHub</link>
       </metadata>
-      <version name="1.42" author="duplobaustein" time="2026-03-27T16:19:42Z">
+      <version name="1.42" author="vazupReaperScripts" time="2026-03-27T16:19:42Z">
         <source main="main">https://github.com/duplobaustein/vazupReaperScripts/raw/a70564b4b9f05da0835d85d9fdec90b5aaa3e6fe/ReaOrganize/ReaOrganize.lua</source>
       </version>
     </reapack>
@@ -62,7 +62,7 @@
         <link rel="website" href="https://github.com/duplobaustein/vazupReaperScripts/issues">Issues</link>
         <link rel="screenshot">https://raw.githubusercontent.com/duplobaustein/vazupReaperScripts/main/screenshots/texas_chainsave.png</link>
       </metadata>
-      <version name="1.0" author="duplobaustein" time="2026-03-27T16:41:44Z">
+      <version name="1.0" author="vazupReaperScripts" time="2026-03-27T16:41:44Z">
         <changelog><![CDATA[v1.0 - Initial release]]></changelog>
         <source main="main">https://github.com/duplobaustein/vazupReaperScripts/raw/6335c4eb66328f0d8b062be70822d920c44249bc/Texas%20ChainSave/Texas_ChainSave.lua</source>
       </version>
