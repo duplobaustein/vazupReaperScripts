@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="vazupReaperScripts" commit="23d44223d17ba396386262c3efa79270b50386fc">
+<index version="1" name="vazupReaperScripts" commit="d0d6294d5af23f664284268ee95c099cb1ed1ffd">
   <category name="Load Default7 Layout">
     <reapack name="Load_Layout_A.lua" type="script" desc="Set Track Layout (A, B, C)">
       <metadata>
@@ -7,7 +7,7 @@
 {\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
 \widowctrl\hyphauto
 
-{\pard \ql \f0 \sa180 \li0 \fi0 Sets TCP and MCP layout to A, B, or C for all tracks in the project. Compatible with the default Reaper theme.\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 Sets the Default7 TCP and MCP layout to A, B, or C for all tracks in the project. Quick and easy!\par}
 }
 ]]></description>
       </metadata>
