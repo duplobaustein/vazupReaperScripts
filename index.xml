@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="vazupReaperScripts" commit="a70564b4b9f05da0835d85d9fdec90b5aaa3e6fe">
+<index version="1" name="vazupReaperScripts" commit="6335c4eb66328f0d8b062be70822d920c44249bc">
   <category name="ReaOrganize">
     <reapack name="ReaOrganize.lua" type="script" desc="ReaOrganize">
       <metadata>
@@ -16,6 +16,40 @@
       </metadata>
       <version name="1.42" author="duplobaustein" time="2026-03-27T16:19:42Z">
         <source main="main">https://github.com/duplobaustein/vazupReaperScripts/raw/a70564b4b9f05da0835d85d9fdec90b5aaa3e6fe/ReaOrganize/ReaOrganize.lua</source>
+      </version>
+    </reapack>
+  </category>
+  <category name="Texas ChainSave">
+    <reapack name="Texas_ChainSave.lua" type="script" desc="Texas ChainSave">
+      <metadata>
+        <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 \fmodern Courier;}}
+{\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
+\widowctrl\hyphauto
+
+{\pard \ql \f0 \sa180 \li0 \fi0 \outlinelevel0 \b \fs36 Texas ChainSave\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 A track FX chain manager for REAPER.\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 \outlinelevel1 \b \fs32 Features\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Lists all tracks with their insert FX chains in a scrollable table\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Checkbox selection with Shift (range), Alt (solo) and Ctrl (folder group) modifiers\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Save All or Save Selected chains with shared Prefix / Suffix naming\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Per Channel mode steps through tracks one by one with individual naming\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Conflict resolution: Unique Name, Overwrite or Skip if file already exists\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Live "Saving..." progress banner during batch saves\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Parent / folder tracks highlighted with a white border in the track number column\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Configurable output folder with optional js_ReaScriptAPI browse dialog\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Refresh button preserves existing checkbox selections\sa180\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 \outlinelevel1 \b \fs32 Requirements\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab REAPER 6.0 or later\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab js_ReaScriptAPI (optional, for native folder browse dialog)\sa180\par}
+}
+]]></description>
+        <link rel="website" href="https://github.com/duplobaustein/vazupReaperScripts">Repository</link>
+        <link rel="website" href="https://github.com/duplobaustein/vazupReaperScripts/issues">Issues</link>
+        <link rel="screenshot">https://raw.githubusercontent.com/duplobaustein/vazupReaperScripts/main/screenshots/texas_chainsave.png</link>
+      </metadata>
+      <version name="1.0" author="duplobaustein" time="2026-03-27T16:41:44Z">
+        <changelog><![CDATA[v1.0 - Initial release]]></changelog>
+        <source main="main">https://github.com/duplobaustein/vazupReaperScripts/raw/6335c4eb66328f0d8b062be70822d920c44249bc/Texas%20ChainSave/Texas_ChainSave.lua</source>
       </version>
     </reapack>
   </category>
