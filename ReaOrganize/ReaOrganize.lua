@@ -1,5 +1,5 @@
 -- @description ReaOrganize
--- @author duplobaustein
+-- @author vazupReaperScripts
 -- @version 1.42
 -- @repository https://github.com/duplobaustein/vazupReaperScripts
 -- @links
