@@ -1,5 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="vazupReaperScripts" commit="733eb66c9fc1c08ebd8514c023b490b1a901bce1">
+<index version="1" name="vazupReaperScripts" commit="a70564b4b9f05da0835d85d9fdec90b5aaa3e6fe">
+  <category name="ReaOrganize">
+    <reapack name="ReaOrganize.lua" type="script" desc="ReaOrganize">
+      <metadata>
+        <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 \fmodern Courier;}}
+{\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
+\widowctrl\hyphauto
+
+{\pard \ql \f0 \sa180 \li0 \fi0 \outlinelevel0 \b \fs36 ReaOrganize\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 A powerful session organizer for REAPER. Assign tracks to named, colored groups, create folder structures, manage send routing, FX chains, panning and presets \u8212- all from one GUI.\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 Requires the ReaImGui extension (install via ReaPack: Extensions > ReaPack > Browse packages > search "ReaImGui").\par}
+}
+]]></description>
+        <link rel="website" href="https://github.com/duplobaustein/vazupReaperScripts">GitHub</link>
+      </metadata>
+      <version name="1.42" author="duplobaustein" time="2026-03-27T16:19:42Z">
+        <source main="main">https://github.com/duplobaustein/vazupReaperScripts/raw/a70564b4b9f05da0835d85d9fdec90b5aaa3e6fe/ReaOrganize/ReaOrganize.lua</source>
+      </version>
+    </reapack>
+  </category>
   <metadata>
     <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 \fmodern Courier;}}
 {\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
