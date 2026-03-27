@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="vazupReaperScripts" commit="2ed1bff0d438a9e36bcc86597a03c55fe376fc7b">
+<index version="1" name="vazupReaperScripts" commit="c1639e2c36984bc33abffc963eeeda8ae6fbdac4">
   <category name="MIDI PCs to Markers">
     <reapack name="MIDI_PCs_to_Markers.lua" type="script" desc="MIDI PCs to Markers/Regions">
       <metadata>
@@ -47,13 +47,13 @@
 {\pard \ql \f0 \sa180 \li0 \fi0 A track FX chain manager for REAPER.\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 \outlinelevel1 \b \fs32 Features\par}
 {\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Lists all tracks with their insert FX chains in a scrollable table\par}
-{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Checkbox selection with Shift (range), Alt (solo) and Ctrl (folder group) modifiers\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Checkbox selection with Shift (range), Alt (exclusive) and Ctrl (folder group) modifiers\par}
 {\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Save All or Save Selected chains with shared Prefix / Suffix naming\par}
 {\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Per Channel mode steps through tracks one by one with individual naming\par}
 {\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Conflict resolution: Unique Name, Overwrite or Skip if file already exists\par}
-{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Live "Saving..." progress banner during batch saves\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab \par}
 {\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Parent / folder tracks highlighted with a white border in the track number column\par}
-{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Configurable output folder with optional js_ReaScriptAPI browse dialog\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Configurable output folder\par}
 {\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Refresh button preserves existing checkbox selections\sa180\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 \outlinelevel1 \b \fs32 Requirements\par}
 {\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab REAPER 6.0 or later\par}
