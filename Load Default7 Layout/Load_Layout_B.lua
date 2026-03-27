@@ -1,7 +1,7 @@
 -- Set Track Layout B (TCP + MCP)
 -- Part of the "Set Track Layout (A, B, C)" package by duplobaustein
 
-local layout_name = "Layout B"
+local layout_name = "B"
 
 reaper.PreventUIRefresh(1)
 
