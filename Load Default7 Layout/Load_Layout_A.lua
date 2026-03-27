@@ -7,8 +7,7 @@
 --   [main] Load_Layout_B.lua
 --   [main] Load_Layout_C.lua
 -- @about
---   Sets TCP and MCP layout to A, B, or C for all tracks in the project.
---   Compatible with the default Reaper theme.
+--   Sets the Default7 TCP and MCP layout to A, B, or C for all tracks in the project. Quick and easy!
 
 local layout_name = "A"
 
