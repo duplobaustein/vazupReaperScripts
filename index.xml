@@ -1,5 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="vazupReaperScripts" commit="6335c4eb66328f0d8b062be70822d920c44249bc">
+<index version="1" name="vazupReaperScripts" commit="459286ffa192f900c024b756d67492d3cf4116d5">
+  <category name="MIDI PCs to Markers">
+    <reapack name="MIDI_PCs_to_Markers.lua" type="script" desc="MIDI Program Change Marker/Region Creator">
+      <metadata>
+        <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 \fmodern Courier;}}
+{\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
+\widowctrl\hyphauto
+
+{\pard \ql \f0 \sa180 \li0 \fi0 Creates named markers or regions from MIDI Program Change events. Map bank/program combinations to custom names, store up to 8 presets, and apply to the whole session or the current time selection. Export and import presets as CSV files for easy sharing.\par}
+}
+]]></description>
+      </metadata>
+      <version name="1.0" author="vazupReaperScripts" time="2026-03-27T16:48:46Z">
+        <changelog><![CDATA[1.0 - Initial release]]></changelog>
+        <source main="main">https://github.com/duplobaustein/vazupReaperScripts/raw/459286ffa192f900c024b756d67492d3cf4116d5/MIDI%20PCs%20to%20Markers/MIDI_PCs_to_Markers.lua</source>
+      </version>
+    </reapack>
+  </category>
   <category name="ReaOrganize">
     <reapack name="ReaOrganize.lua" type="script" desc="ReaOrganize">
       <metadata>
