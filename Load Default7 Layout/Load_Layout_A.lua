@@ -1,5 +1,5 @@
 -- @description Set Track Layout (A, B, C)
--- @author duplobaustein
+-- @author vazupReaperScripts
 -- @version 1.0
 -- @repository https://github.com/duplobaustein/vazupReaperScripts/raw/main/index.xml
 -- @provides
