@@ -1,6 +1,6 @@
 -- @description Set Track Layout (A, B, C)
 -- @author vazupReaperScripts
--- @version 1.0
+-- @version 1.1
 -- @repository https://github.com/duplobaustein/vazupReaperScripts/raw/main/index.xml
 -- @provides
 --   [main] Load_Layout_A.lua
