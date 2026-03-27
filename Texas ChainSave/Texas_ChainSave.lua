@@ -1,5 +1,5 @@
 -- @description Texas ChainSave
--- @author duplobaustein
+-- @author vazupReaperScripts
 -- @version 1.0
 -- @changelog
 --   v1.0 - Initial release
