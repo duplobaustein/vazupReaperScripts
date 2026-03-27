@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="vazupReaperScripts" commit="620f5a42154a2d30a2c3161e22f0affd13420bf1">
+<index version="1" name="vazupReaperScripts" commit="2ed1bff0d438a9e36bcc86597a03c55fe376fc7b">
   <category name="MIDI PCs to Markers">
     <reapack name="MIDI_PCs_to_Markers.lua" type="script" desc="MIDI PCs to Markers/Regions">
       <metadata>
@@ -7,7 +7,7 @@
 {\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
 \widowctrl\hyphauto
 
-{\pard \ql \f0 \sa180 \li0 \fi0 Creates named markers or regions from MIDI Program Change events. Map bank/program combinations to custom names, store up to 8 presets, and apply to the whole session or the current time selection. Export and import presets as CSV files for easy sharing. Conversion can be applied to the whole session, or the time selection. A MIDI item with PCs has to be selected, when running.\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 Creates named markers or regions from MIDI Program Change events. Map bank/program combinations to custom names, store up to 8 presets, and apply to the whole session or the current time selection. Export and import presets as CSV files for easy sharing. A MIDI item with PCs has to be selected, when running.\par}
 }
 ]]></description>
       </metadata>
