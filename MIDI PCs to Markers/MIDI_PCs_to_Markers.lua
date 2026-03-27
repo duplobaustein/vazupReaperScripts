@@ -1,4 +1,4 @@
--- @description MIDI Program Change Marker/Region Creator
+-- @description MIDI PCs to Markers/Regions
 -- @author vazupReaperScripts
 -- @version 1.0
 -- @repository https://github.com/duplobaustein/vazupReaperScripts
