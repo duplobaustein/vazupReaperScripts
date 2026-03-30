@@ -1,5 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="vazupReaperScripts" commit="6f466896cc665fd0faf7c0524b35235bad5278d5">
+<index version="1" name="vazupReaperScripts" commit="64fc38d72122eb10206f11af31cff97ebb5f9efe">
+  <category name="Audio Loudness Analyzer">
+    <reapack name="Audio_Loudness_Analyzer.lua" type="script" desc="Audio Loudness Analyzer">
+      <metadata>
+        <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 \fmodern Courier;}}
+{\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
+\widowctrl\hyphauto
+
+{\pard \ql \f0 \sa180 \li0 \fi0 Analyzes loaded audio files. Displays a waveform with overlaid LUFS-M, LUFS-S and True Peak curves. Computes LUFS-I (integrated, gated), LUFS-M max, LUFS-S max, True Peak (4x linear), RMS and per-channel sample peaks. Hover over the waveform for a time-synced readout. Streaming target comparison included.\par}
+}
+]]></description>
+      </metadata>
+      <version name="1.3" author="vazupReaperScripts" time="2026-03-30T23:41:31Z">
+        <source main="main">https://github.com/duplobaustein/vazupReaperScripts/raw/64fc38d72122eb10206f11af31cff97ebb5f9efe/Audio%20Loudness%20Analyzer/Audio_Loudness_Analyzer.lua</source>
+      </version>
+    </reapack>
+  </category>
   <category name="Load Default7 Layout">
     <reapack name="Load_Layout_A.lua" type="script" desc="Set Track Layout (A, B, C)">
       <metadata>
