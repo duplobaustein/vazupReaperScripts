@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="vazupReaperScripts" commit="ba96b6a8d4c2079458b02aede18f95b63e68b4f3">
+<index version="1" name="vazupReaperScripts" commit="6f466896cc665fd0faf7c0524b35235bad5278d5">
   <category name="Load Default7 Layout">
     <reapack name="Load_Layout_A.lua" type="script" desc="Set Track Layout (A, B, C)">
       <metadata>
@@ -78,7 +78,7 @@
 {\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
 \widowctrl\hyphauto
 
-{\pard \ql \f0 \sa180 \li0 \fi0 \outlinelevel0 \b \fs36 ReaOrganize v1.44\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 \outlinelevel0 \b \fs36 ReaOrganize v1.45\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 A powerful session organizer for REAPER.\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 Assign tracks to named, colored groups, create folder structures, manage send routing, FX chains, panning and presets \u8212- all from one GUI.\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 Requires ReaImGui (install via ReaPack, search "ReaImGui").\par}
@@ -90,6 +90,10 @@
       <version name="1.44" author="vazupReaperScripts" time="2026-03-30T14:13:46Z">
         <source main="main">https://github.com/duplobaustein/vazupReaperScripts/raw/c07389a4dd277d87b4703e99c36c55eaae61a196/ReaOrganize/ReaOrganize.lua</source>
         <source file="ReaOrganize_Manual.pdf">https://github.com/duplobaustein/vazupReaperScripts/raw/c07389a4dd277d87b4703e99c36c55eaae61a196/ReaOrganize/ReaOrganize_Manual.pdf</source>
+      </version>
+      <version name="1.45" author="vazupReaperScripts" time="2026-03-30T15:22:55Z">
+        <source main="main">https://github.com/duplobaustein/vazupReaperScripts/raw/6f466896cc665fd0faf7c0524b35235bad5278d5/ReaOrganize/ReaOrganize.lua</source>
+        <source file="ReaOrganize_Manual.pdf">https://github.com/duplobaustein/vazupReaperScripts/raw/6f466896cc665fd0faf7c0524b35235bad5278d5/ReaOrganize/ReaOrganize_Manual.pdf</source>
       </version>
     </reapack>
   </category>
