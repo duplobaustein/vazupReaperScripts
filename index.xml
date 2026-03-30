@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="vazupReaperScripts" commit="e5e3f4438a93e9820a0c2a27f6832b6632e0e73f">
+<index version="1" name="vazupReaperScripts" commit="4607a96d556b236dc7bb3f050ecc129ba61976f5">
   <category name="Load Default7 Layout">
     <reapack name="Load_Layout_A.lua" type="script" desc="Set Track Layout (A, B, C)">
       <metadata>
@@ -70,7 +70,7 @@
 {\pard \ql \f0 \sa180 \li0 \fi0 A powerful session organizer for REAPER.\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 Assign tracks to named, colored groups, create folder structures, manage send routing, FX chains, panning and presets \u8212- all from one GUI.\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 Requires ReaImGui (install via ReaPack, search "ReaImGui").\par}
-{\pard \ql \f0 \sa180 \li0 \fi0 See ReaOrganize_Manual.md in the same folder for the full manual.\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 See provided ReaOrganize_Manual.pdf for the full manual.\par}
 }
 ]]></description>
         <link rel="website" href="https://github.com/duplobaustein/vazupReaperScripts">GitHub</link>
