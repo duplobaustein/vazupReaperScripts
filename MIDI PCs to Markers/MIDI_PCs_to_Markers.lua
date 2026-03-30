@@ -8,7 +8,8 @@
 --   Creates named markers or regions from MIDI Program Change events.
 --   Map bank/program combinations to custom names, store up to 8 presets,
 --   and apply to the whole session or the current time selection.
---   Export and import presets as CSV files for easy sharing. A MIDI item with PCs has to be selected, when running. 
+--   Export and import presets as CSV files for backup. 
+--   A MIDI item with PCs has to be selected, when running. 
 -- @changelog
 --   1.0 - Initial release
 
