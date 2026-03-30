@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="vazupReaperScripts" commit="bc17bdf423c1b8f9cb4d99ad5dd77f1c70812d2c">
+<index version="1" name="vazupReaperScripts" commit="635c2d4a76003929c1f187ccfe5dafbcc66c3647">
   <category name="Load Default7 Layout">
     <reapack name="Load_Layout_A.lua" type="script" desc="Set Track Layout (A, B, C)">
       <metadata>
@@ -66,9 +66,11 @@
 {\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
 \widowctrl\hyphauto
 
-{\pard \ql \f0 \sa180 \li0 \fi0 \outlinelevel0 \b \fs36 ReaOrganize\par}
-{\pard \ql \f0 \sa180 \li0 \fi0 A powerful session organizer for REAPER. Assign tracks to named, colored groups, create folder structures, create and manage send routing, FX chains, panning and assign FX Chains or Plugins \u8212- all from one GUI.\par}
-{\pard \ql \f0 \sa180 \li0 \fi0 Requires the ReaImGui extension (install via ReaPack: Extensions > ReaPack > Browse packages > search "ReaImGui").\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 \outlinelevel0 \b \fs36 ReaOrganize v1.42\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 A powerful session organizer for REAPER.\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 Assign tracks to named, colored groups, create folder structures, manage send routing, FX chains, panning and presets \u8212- all from one GUI.\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 Requires ReaImGui (install via ReaPack, search "ReaImGui").\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 See ReaOrganize_Manual.md in the same folder for the full manual.\par}
 }
 ]]></description>
         <link rel="website" href="https://github.com/duplobaustein/vazupReaperScripts">GitHub</link>
