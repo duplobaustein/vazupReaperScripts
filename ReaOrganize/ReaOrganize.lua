@@ -1,11 +1,11 @@
 -- @description ReaOrganize
 -- @author vazupReaperScripts
--- @version 1.43
+-- @version 1.44
 -- @repository https://github.com/duplobaustein/vazupReaperScripts
 -- @links
 --   GitHub https://github.com/duplobaustein/vazupReaperScripts
 -- @about
---   # ReaOrganize v1.43
+--   # ReaOrganize v1.44
 --   A powerful session organizer for REAPER.
 --
 --   Assign tracks to named, colored groups, create folder structures,
@@ -30,7 +30,7 @@ if not r.ImGui_CreateContext then
 end
 
 -- ── Version ───────────────────────────────────────────────────────────────────
-local VERSION = "v1.43"
+local VERSION = "v1.44"
 
 -- ── Constants ─────────────────────────────────────────────────────────────────
 local MAX_GROUPS   = 100
