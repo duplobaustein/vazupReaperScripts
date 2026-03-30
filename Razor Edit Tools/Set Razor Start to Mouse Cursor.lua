@@ -8,7 +8,7 @@
 --   track under the mouse cursor.
 --
 --   If a razor area exists anywhere in the session (at or to the right of the
---   cursor), its start is moved to the cursor and the area is expanded
+--   cursor), its start is moved to the cursor and the area is expanded, also
 --   vertically to cover all tracks between the razor's track and the track
 --   under the mouse.
 --
