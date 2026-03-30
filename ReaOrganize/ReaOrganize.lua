@@ -1,11 +1,11 @@
 -- @description ReaOrganize
 -- @author vazupReaperScripts
--- @version 1.42
+-- @version 1.43
 -- @repository https://github.com/duplobaustein/vazupReaperScripts
 -- @links
 --   GitHub https://github.com/duplobaustein/vazupReaperScripts
 -- @about
---   # ReaOrganize v1.42
+--   # ReaOrganize v1.43
 --   A powerful session organizer for REAPER.
 --
 --   Assign tracks to named, colored groups, create folder structures,
