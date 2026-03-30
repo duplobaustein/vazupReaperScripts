@@ -16,7 +16,7 @@
 --   See ReaOrganize_Manual.md in the same folder for the full manual.
 -- @provides
 --   ReaOrganize.lua
---   ReaOrganize_Manual.md
+--   ReaOrganize_Manual.pdf
 
 local r = reaper
 math.randomseed(os.time())
