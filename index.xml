@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="vazupReaperScripts" commit="c07389a4dd277d87b4703e99c36c55eaae61a196">
+<index version="1" name="vazupReaperScripts" commit="d52ec929bbfa044fbe215ae68e04e79721f7b457">
   <category name="Load Default7 Layout">
     <reapack name="Load_Layout_A.lua" type="script" desc="Set Track Layout (A, B, C)">
       <metadata>
@@ -30,7 +30,7 @@
 {\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
 \widowctrl\hyphauto
 
-{\pard \ql \f0 \sa180 \li0 \fi0 Creates named markers or regions from MIDI Program Change events. Map bank/program combinations to custom names, store up to 8 presets, and apply to the whole session or the current time selection. Export and import presets as CSV files for easy sharing. A MIDI item with PCs has to be selected, when running.\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 Creates named markers or regions from MIDI Program Change events. Map bank/program combinations to custom names, store up to 8 presets, and apply to the whole session or the current time selection. Export and import presets as CSV files for backup. A MIDI item with PCs has to be selected, when running.\par}
 }
 ]]></description>
       </metadata>
