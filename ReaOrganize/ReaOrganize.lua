@@ -13,7 +13,7 @@
 --
 --   Requires ReaImGui (install via ReaPack, search "ReaImGui").
 --
---   See ReaOrganize_Manual.md in the same folder for the full manual.
+--   See provided ReaOrganize_Manual.pdf for the full manual.
 -- @provides
 --   ReaOrganize.lua
 --   ReaOrganize_Manual.pdf
