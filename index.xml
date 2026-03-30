@@ -11,11 +11,6 @@
 }
 ]]></description>
       </metadata>
-      <version name="1.0" author="vazupReaperScripts" time="2026-03-27T18:17:43Z">
-        <source main="main">https://github.com/duplobaustein/vazupReaperScripts/raw/fa72e75cae78eba5a27a27da650639985500a494/Load%20Default7%20Layout/Load_Layout_A.lua</source>
-        <source main="main" file="Load_Layout_B.lua">https://github.com/duplobaustein/vazupReaperScripts/raw/fa72e75cae78eba5a27a27da650639985500a494/Load%20Default7%20Layout/Load_Layout_B.lua</source>
-        <source main="main" file="Load_Layout_C.lua">https://github.com/duplobaustein/vazupReaperScripts/raw/fa72e75cae78eba5a27a27da650639985500a494/Load%20Default7%20Layout/Load_Layout_C.lua</source>
-      </version>
       <version name="1.1" author="vazupReaperScripts" time="2026-03-27T18:27:58Z">
         <source main="main">https://github.com/duplobaustein/vazupReaperScripts/raw/23d44223d17ba396386262c3efa79270b50386fc/Load%20Default7%20Layout/Load_Layout_A.lua</source>
         <source main="main" file="Load_Layout_B.lua">https://github.com/duplobaustein/vazupReaperScripts/raw/23d44223d17ba396386262c3efa79270b50386fc/Load%20Default7%20Layout/Load_Layout_B.lua</source>
@@ -92,13 +87,6 @@
 ]]></description>
         <link rel="website" href="https://github.com/duplobaustein/vazupReaperScripts">GitHub</link>
       </metadata>
-      <version name="1.42" author="vazupReaperScripts" time="2026-03-27T16:19:42Z">
-        <source main="main">https://github.com/duplobaustein/vazupReaperScripts/raw/a70564b4b9f05da0835d85d9fdec90b5aaa3e6fe/ReaOrganize/ReaOrganize.lua</source>
-      </version>
-      <version name="1.43" author="vazupReaperScripts" time="2026-03-30T13:02:46Z">
-        <source main="main">https://github.com/duplobaustein/vazupReaperScripts/raw/e5e3f4438a93e9820a0c2a27f6832b6632e0e73f/ReaOrganize/ReaOrganize.lua</source>
-        <source file="ReaOrganize_Manual.md">https://github.com/duplobaustein/vazupReaperScripts/raw/e5e3f4438a93e9820a0c2a27f6832b6632e0e73f/ReaOrganize/ReaOrganize_Manual.md</source>
-      </version>
       <version name="1.44" author="vazupReaperScripts" time="2026-03-30T14:13:46Z">
         <source main="main">https://github.com/duplobaustein/vazupReaperScripts/raw/c07389a4dd277d87b4703e99c36c55eaae61a196/ReaOrganize/ReaOrganize.lua</source>
         <source file="ReaOrganize_Manual.pdf">https://github.com/duplobaustein/vazupReaperScripts/raw/c07389a4dd277d87b4703e99c36c55eaae61a196/ReaOrganize/ReaOrganize_Manual.pdf</source>
