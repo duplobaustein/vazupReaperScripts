@@ -1,6 +1,7 @@
 -- @description Set Razor End to Mouse Cursor
 -- @author vazupReaperScripts
 -- @version 1.0
+-- @provides [main] Set Razor Start to Mouse Cursor.lua
 -- @about
 --   Sets the end of the razor edit area to the mouse cursor position on the
 --   track under the mouse cursor.
