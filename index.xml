@@ -87,10 +87,6 @@
 ]]></description>
         <link rel="website" href="https://github.com/duplobaustein/vazupReaperScripts">GitHub</link>
       </metadata>
-      <version name="1.44" author="vazupReaperScripts" time="2026-03-30T14:13:46Z">
-        <source main="main">https://github.com/duplobaustein/vazupReaperScripts/raw/c07389a4dd277d87b4703e99c36c55eaae61a196/ReaOrganize/ReaOrganize.lua</source>
-        <source file="ReaOrganize_Manual.pdf">https://github.com/duplobaustein/vazupReaperScripts/raw/c07389a4dd277d87b4703e99c36c55eaae61a196/ReaOrganize/ReaOrganize_Manual.pdf</source>
-      </version>
       <version name="1.45" author="vazupReaperScripts" time="2026-03-30T15:22:55Z">
         <source main="main">https://github.com/duplobaustein/vazupReaperScripts/raw/6f466896cc665fd0faf7c0524b35235bad5278d5/ReaOrganize/ReaOrganize.lua</source>
         <source file="ReaOrganize_Manual.pdf">https://github.com/duplobaustein/vazupReaperScripts/raw/6f466896cc665fd0faf7c0524b35235bad5278d5/ReaOrganize/ReaOrganize_Manual.pdf</source>
