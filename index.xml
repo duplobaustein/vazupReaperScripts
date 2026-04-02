@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="vazupReaperScripts" commit="37bd576b008c21f11a0b7887475846dcf104a83f">
+<index version="1" name="vazupReaperScripts" commit="ccf47b73f316b9c48f301521505b3859441c1a58">
   <category name="Audio Loudness Analyzer">
     <reapack name="Audio_Loudness_Analyzer.lua" type="script" desc="Audio Loudness Analyzer">
       <metadata>
@@ -94,7 +94,7 @@
 {\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
 \widowctrl\hyphauto
 
-{\pard \ql \f0 \sa180 \li0 \fi0 \outlinelevel0 \b \fs36 ReaOrganize v1.45\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 \outlinelevel0 \b \fs36 ReaOrganize v1.46\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 ReaOrganize is a session organizer for REAPER. It lets you design your session's structure, defining groups, track send routing, FX chains, panning and colors \u8212- and then executes everything in one click via the RUN button. The core idea is that ReaOrganize works as a blueprint layer on top of your REAPER session. You define how your session should be structured in the script, and RUN builds it.\par}
 }
 ]]></description>
@@ -103,6 +103,9 @@
       <version name="1.45" author="vazupReaperScripts" time="2026-03-30T15:22:55Z">
         <source main="main">https://github.com/duplobaustein/vazupReaperScripts/raw/6f466896cc665fd0faf7c0524b35235bad5278d5/ReaOrganize/ReaOrganize.lua</source>
         <source file="ReaOrganize_Manual.pdf">https://github.com/duplobaustein/vazupReaperScripts/raw/6f466896cc665fd0faf7c0524b35235bad5278d5/ReaOrganize/ReaOrganize_Manual.pdf</source>
+      </version>
+      <version name="1.46" author="vazupReaperScripts" time="2026-04-02T23:48:41Z">
+        <source main="main">https://github.com/duplobaustein/vazupReaperScripts/raw/ccf47b73f316b9c48f301521505b3859441c1a58/ReaOrganize/ReaOrganize.lua</source>
       </version>
     </reapack>
   </category>
