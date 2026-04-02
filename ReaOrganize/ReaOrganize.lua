@@ -7,7 +7,7 @@
 -- @about
 --   # ReaOrganize v1.46
 --   ReaOrganize is a session organizer for REAPER. It lets you design your session's structure, defining groups, track send routing, FX chains, panning and colors — and then executes everything in one click via the RUN button. The core idea is that ReaOrganize works as a blueprint layer on top of your REAPER session. You define how your session should be structured in the script, and RUN builds it.
-
+--
 -- Basic Workflow 
 -- 1. Open ReaOrganize from the REAPER Scripts menu. 
 -- 2. The Track Panel (right) lists all tracks in your session. 
@@ -15,9 +15,9 @@
 -- 4. Assign tracks to groups using the Group dropdown in the Track Panel. 
 -- 5. Configure your groups: set names, colors, routing, FX chains and sends. 
 -- 6. Hit RUN — ReaOrganize creates folder tracks, colors child tracks, wires up sends and applies FX chains.
-
+--
 -- Requires: The ReaImGui extension (install via ReaPack: Extensions > ReaPack > Browse packages > search "ReaImGui").
-
+--
 -- Lookup the provided manual pdf.
 -- @provides
 --   ReaOrganize.lua
