@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="vazupReaperScripts" commit="ccf47b73f316b9c48f301521505b3859441c1a58">
+<index version="1" name="vazupReaperScripts" commit="7d64aa25a8624fe3348ad7594164cc244d546502">
   <category name="Audio Loudness Analyzer">
     <reapack name="Audio_Loudness_Analyzer.lua" type="script" desc="Audio Loudness Analyzer">
       <metadata>
@@ -96,6 +96,15 @@
 
 {\pard \ql \f0 \sa180 \li0 \fi0 \outlinelevel0 \b \fs36 ReaOrganize v1.46\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 ReaOrganize is a session organizer for REAPER. It lets you design your session's structure, defining groups, track send routing, FX chains, panning and colors \u8212- and then executes everything in one click via the RUN button. The core idea is that ReaOrganize works as a blueprint layer on top of your REAPER session. You define how your session should be structured in the script, and RUN builds it.\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 Basic Workflow\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 1.\tx360\tab Open ReaOrganize from the REAPER Scripts menu.\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 2.\tx360\tab The Track Panel (right) lists all tracks in your session.\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 3.\tx360\tab The Group Panel (left) lets you define groups \u8212- named, colored buckets with send routing, FX chains and send slots.\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 4.\tx360\tab Assign tracks to groups using the Group dropdown in the Track Panel.\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 5.\tx360\tab Configure your groups: set names, colors, routing, FX chains and sends.\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 6.\tx360\tab Hit RUN \u8212- ReaOrganize creates folder tracks, colors child tracks, wires up sends and applies FX chains.\sa180\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 Requires: The ReaImGui extension (install via ReaPack: Extensions > ReaPack > Browse packages > search "ReaImGui").\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 Lookup the provided manual pdf.\par}
 }
 ]]></description>
         <link rel="website" href="https://github.com/duplobaustein/vazupReaperScripts">GitHub</link>
