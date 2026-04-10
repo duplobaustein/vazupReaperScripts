@@ -1,17 +1,16 @@
 -- @description MIDI Program Change Marker/Region Creator
 -- @author vazupReaperScripts
--- @version 1.10
+-- @version 1.1
 -- @repository https://github.com/duplobaustein/vazupReaperScripts
 -- @provides
---   MIDI_PC_to_Markers.lua
+--   [main] MIDI_PC_to_Markers.lua
 -- @about
 --   Creates named markers or regions from MIDI Program Change events.
 --   Map bank/program combinations to custom names, store up to 8 presets,
 --   and apply to the whole session or the current time selection.
---   Export and import presets as CSV files.
+--   Export and import presets as CSV files for easy sharing.
 -- @changelog
---   1.10 - Added checkboxes, Marker/Region selection and total process overhaul.
---   1.00 - Initial release
+--   Added checkboxes, Marker/Region selection and total process overhaul.
 
 local ctx = reaper.ImGui_CreateContext("Program Change Naming")
 
