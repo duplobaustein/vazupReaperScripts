@@ -3,7 +3,7 @@
 -- @version 1.1
 -- @repository https://github.com/duplobaustein/vazupReaperScripts
 -- @provides
---   [main] MIDI_PC_to_Markers.lua
+--   MIDI_PC_to_Markers.lua
 -- @about
 --   Creates named markers or regions from MIDI Program Change events.
 --   Map bank/program combinations to custom names, store up to 8 presets,
