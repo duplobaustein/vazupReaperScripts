@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="vazupReaperScripts" commit="43693ce2da659e739d6636f10522e04351771ed4">
+<index version="1" name="vazupReaperScripts" commit="4c21d72ebf97de2b2d2c68c2c303503ee2ffdb6a">
   <category name="Audio Loudness Analyzer">
     <reapack name="Audio_Loudness_Analyzer.lua" type="script" desc="Audio Loudness Analyzer">
       <metadata>
@@ -35,19 +35,23 @@
     </reapack>
   </category>
   <category name="MIDI PCs to Markers">
-    <reapack name="MIDI_PCs_to_Markers.lua" type="script" desc="MIDI PCs to Markers/Regions">
+    <reapack name="MIDI_PCs_to_Markers.lua" type="script" desc="MIDI Program Change Marker/Region Creator">
       <metadata>
         <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 \fmodern Courier;}}
 {\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
 \widowctrl\hyphauto
 
-{\pard \ql \f0 \sa180 \li0 \fi0 Creates named markers or regions from MIDI Program Change events. Map bank/program combinations to custom names, store up to 8 presets, and apply to the whole session or the current time selection. Export and import presets as CSV files for backup. A MIDI item with PCs has to be selected, when running.\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 Creates named markers or regions from MIDI Program Change events. Map bank/program combinations to custom names, store up to 8 presets, and apply to the whole session or the current time selection. Export and import presets as CSV files for easy sharing.\par}
 }
 ]]></description>
       </metadata>
       <version name="1.0" author="vazupReaperScripts" time="2026-03-27T16:48:46Z">
         <changelog><![CDATA[1.0 - Initial release]]></changelog>
         <source main="main">https://github.com/duplobaustein/vazupReaperScripts/raw/459286ffa192f900c024b756d67492d3cf4116d5/MIDI%20PCs%20to%20Markers/MIDI_PCs_to_Markers.lua</source>
+      </version>
+      <version name="1.1" author="vazupReaperScripts" time="2026-04-10T07:33:26Z">
+        <changelog><![CDATA[Added checkboxes, Marker/Region selection and total process overhaul.]]></changelog>
+        <source main="main">https://github.com/duplobaustein/vazupReaperScripts/raw/4c21d72ebf97de2b2d2c68c2c303503ee2ffdb6a/MIDI%20PCs%20to%20Markers/MIDI_PCs_to_Markers.lua</source>
       </version>
     </reapack>
   </category>
