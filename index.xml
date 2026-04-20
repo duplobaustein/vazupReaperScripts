@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="vazupReaperScripts" commit="4c21d72ebf97de2b2d2c68c2c303503ee2ffdb6a">
+<index version="1" name="vazupReaperScripts" commit="26040d2043c2fce3b99341e9dab3e55152eac3b2">
   <category name="Audio Loudness Analyzer">
     <reapack name="Audio_Loudness_Analyzer.lua" type="script" desc="Audio Loudness Analyzer">
       <metadata>
@@ -52,6 +52,10 @@
       <version name="1.1" author="vazupReaperScripts" time="2026-04-10T07:33:26Z">
         <changelog><![CDATA[Added checkboxes, Marker/Region selection and total process overhaul.]]></changelog>
         <source main="main">https://github.com/duplobaustein/vazupReaperScripts/raw/4c21d72ebf97de2b2d2c68c2c303503ee2ffdb6a/MIDI%20PCs%20to%20Markers/MIDI_PCs_to_Markers.lua</source>
+      </version>
+      <version name="1.2" author="vazupReaperScripts" time="2026-04-20T18:07:15Z">
+        <changelog><![CDATA[Added Export CSV, preset save/load safety prompts, fixed selection behaviour.]]></changelog>
+        <source main="main">https://github.com/duplobaustein/vazupReaperScripts/raw/26040d2043c2fce3b99341e9dab3e55152eac3b2/MIDI%20PCs%20to%20Markers/MIDI_PCs_to_Markers.lua</source>
       </version>
     </reapack>
   </category>
