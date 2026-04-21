@@ -1,11 +1,11 @@
 -- @description ReaOrganize
 -- @author vazupReaperScripts
--- @version 1.47
+-- @version 1.49
 -- @repository https://github.com/duplobaustein/vazupReaperScripts
 -- @links
 --   GitHub https://github.com/duplobaustein/vazupReaperScripts
 -- @about
---   # ReaOrganize v1.47
+--   # ReaOrganize v1.49
 --   ReaOrganize is a session organizer for REAPER. It lets you design your session's structure, defining groups, track send routing, FX chains, panning and colors — and then executes everything in one click via the RUN button. The core idea is that ReaOrganize works as a blueprint layer on top of your REAPER session. You define how your session should be structured in the script, and RUN builds it.
 --
 --   Basic Workflow 
@@ -35,7 +35,7 @@ if not r.ImGui_CreateContext then
 end
 
 -- ── Version ───────────────────────────────────────────────────────────────────
-local VERSION = "v1.47"
+local VERSION = "v1.49"
 
 -- ── Constants ─────────────────────────────────────────────────────────────────
 local MAX_GROUPS   = 100
@@ -871,6 +871,53 @@ local function run()
     end
   end
   -- (continue even with no active groups — track FX and global sends still apply)
+
+  -- ── Pre-sort: move tracks so group panel order matches session order ────────
+  do
+    r.Undo_BeginBlock()
+    r.PreventUIRefresh(1)
+    local insert_pos = r.CountTracks(0)
+    for g = 1, NUM_GROUPS do
+      if #group_members[g] > 0 then
+        local min_idx = math.huge
+        for _, t in ipairs(group_members[g]) do
+          if t.reaper_idx < min_idx then min_idx = t.reaper_idx end
+        end
+        if min_idx < insert_pos then insert_pos = min_idx end
+      end
+    end
+    local cursor = insert_pos
+    for g = 1, NUM_GROUPS do
+      if #group_members[g] > 0 then
+        table.sort(group_members[g], function(a, b) return a.reaper_idx < b.reaper_idx end)
+        for _, t in ipairs(group_members[g]) do
+          local tr = r.GetTrack(0, t.reaper_idx)
+          if tr then
+            if t.reaper_idx ~= cursor then
+              r.SetOnlyTrackSelected(tr)
+              if t.reaper_idx > cursor then
+                r.ReorderSelectedTracks(cursor, 0)
+              else
+                r.ReorderSelectedTracks(cursor + 1, 0)
+              end
+              for _, t2 in ipairs(tracks) do
+                local tr2 = r.GetTrack(0, t2.reaper_idx)
+                if tr2 then
+                  for ti2 = 0, r.CountTracks(0) - 1 do
+                    if r.GetTrack(0, ti2) == tr2 then t2.reaper_idx = ti2; break end
+                  end
+                end
+              end
+              t.reaper_idx = cursor
+            end
+            cursor = cursor + 1
+          end
+        end
+      end
+    end
+    r.PreventUIRefresh(-1)
+    r.Undo_EndBlock("ReaOrganize: pre-sort tracks", -1)
+  end
 
   -- Stamp GUIDs onto ALL tracks (including stereo-flagged ones) before any moves
   for _, t in ipairs(tracks) do
@@ -2267,7 +2314,7 @@ local function export_presets()
   if r.JS_Dialog_BrowseForSaveFile then
     local ok, path = dlg_JS_BrowseForSaveFile("Export ReaOrganize Presets",
       r.GetProjectPath("") ~= "" and r.GetProjectPath("") or r.GetResourcePath(), 
-      "reaorganize_presets.roPre", "ReaOrganize Presets (*.roPre) *.roPre All files *.* ")
+      "reaorganize_presets.roPre", "ReaOrganize Presets (*.roPre) *.roPre All files *.* ")
     if ok == 1 and path and path ~= "" then
       out_path = path
       if not out_path:match("%.roPre$") then out_path = out_path .. ".roPre" end
@@ -2291,7 +2338,7 @@ local function import_presets()
   if r.JS_Dialog_BrowseForOpenFiles then
     local ok, path = dlg_JS_BrowseForOpenFiles("Import ReaOrganize Presets",
       r.GetProjectPath("") ~= "" and r.GetProjectPath("") or r.GetResourcePath(),
-      "", "ReaOrganize Presets (*.roPre) *.roPre All files *.* ", false)
+      "", "ReaOrganize Presets (*.roPre) *.roPre All files *.* ", false)
     if ok == 1 and path and path ~= "" then in_path = path end
   else
     -- Manual fallback: ask user to type path
@@ -5035,7 +5082,8 @@ end
 
 local function loop()
   r.ImGui_SetNextWindowSize(ctx, WIN_W, WIN_H, r.ImGui_Cond_FirstUseEver())
-  local visible, open = r.ImGui_Begin(ctx, "ReaOrganize " .. VERSION, true)
+  local visible, open = r.ImGui_Begin(ctx, "ReaOrganize " .. VERSION, true,
+    r.ImGui_WindowFlags_NoScrollbar() | r.ImGui_WindowFlags_NoScrollWithMouse())
   if visible then
     draw_gui()
     r.ImGui_End(ctx)
