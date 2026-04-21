@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="vazupReaperScripts" commit="26040d2043c2fce3b99341e9dab3e55152eac3b2">
+<index version="1" name="vazupReaperScripts" commit="57fed293ac9cdbeab32cbc74d6f82bf8ffb86472">
   <category name="Audio Loudness Analyzer">
     <reapack name="Audio_Loudness_Analyzer.lua" type="script" desc="Audio Loudness Analyzer">
       <metadata>
@@ -102,7 +102,7 @@
 {\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
 \widowctrl\hyphauto
 
-{\pard \ql \f0 \sa180 \li0 \fi0 \outlinelevel0 \b \fs36 ReaOrganize v1.47\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 \outlinelevel0 \b \fs36 ReaOrganize v1.49\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 ReaOrganize is a session organizer for REAPER. It lets you design your session's structure, defining groups, track send routing, FX chains, panning and colors \u8212- and then executes everything in one click via the RUN button. The core idea is that ReaOrganize works as a blueprint layer on top of your REAPER session. You define how your session should be structured in the script, and RUN builds it.\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 Basic Workflow\par}
 {\pard \ql \f0 \sa0 \li360 \fi-360 1.\tx360\tab Open ReaOrganize from the REAPER Scripts menu.\par}
@@ -123,6 +123,10 @@
       <version name="1.47" author="vazupReaperScripts" time="2026-04-03T00:03:59Z">
         <source main="main">https://github.com/duplobaustein/vazupReaperScripts/raw/ae3f2b4211495df3cba37c39ea282942dade49b9/ReaOrganize/ReaOrganize.lua</source>
         <source file="ReaOrganize_Manual.pdf">https://github.com/duplobaustein/vazupReaperScripts/raw/ae3f2b4211495df3cba37c39ea282942dade49b9/ReaOrganize/ReaOrganize_Manual.pdf</source>
+      </version>
+      <version name="1.49" author="vazupReaperScripts" time="2026-04-21T11:21:59Z">
+        <source main="main">https://github.com/duplobaustein/vazupReaperScripts/raw/57fed293ac9cdbeab32cbc74d6f82bf8ffb86472/ReaOrganize/ReaOrganize.lua</source>
+        <source file="ReaOrganize_Manual.pdf">https://github.com/duplobaustein/vazupReaperScripts/raw/57fed293ac9cdbeab32cbc74d6f82bf8ffb86472/ReaOrganize/ReaOrganize_Manual.pdf</source>
       </version>
     </reapack>
   </category>
