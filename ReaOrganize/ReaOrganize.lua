@@ -1,11 +1,11 @@
 -- @description ReaOrganize
 -- @author vazupReaperScripts
--- @version 1.49
+-- @version 1.50
 -- @repository https://github.com/duplobaustein/vazupReaperScripts
 -- @links
 --   GitHub https://github.com/duplobaustein/vazupReaperScripts
 -- @about
---   # ReaOrganize v1.49
+--   # ReaOrganize v1.47
 --   ReaOrganize is a session organizer for REAPER. It lets you design your session's structure, defining groups, track send routing, FX chains, panning and colors — and then executes everything in one click via the RUN button. The core idea is that ReaOrganize works as a blueprint layer on top of your REAPER session. You define how your session should be structured in the script, and RUN builds it.
 --
 --   Basic Workflow 
@@ -35,7 +35,7 @@ if not r.ImGui_CreateContext then
 end
 
 -- ── Version ───────────────────────────────────────────────────────────────────
-local VERSION = "v1.49"
+local VERSION = "v1.50"
 
 -- ── Constants ─────────────────────────────────────────────────────────────────
 local MAX_GROUPS   = 100
@@ -202,6 +202,8 @@ local master_fx_chain     = nil
 local opt_fx_folder          = nil   -- custom FX chain folder path (nil = default)
 local opt_sends_at_bottom    = false -- move sends to bottom (above global sends)
 local opt_sends_folder_top   = false -- move sends to top of their folder (just after folder track)
+local opt_trim_groups        = false -- enable Trim Volume lane on folder tracks
+local opt_trim_sends         = false -- enable Trim Volume lane on send tracks
 local opt_sends_folder_bot   = true  -- move sends to bottom of their folder (default)
 local opt_send_color_packed  = pack_color(136, 136, 136)  -- default send color (0x888888)
 local opt_send_use_trk_color = false
@@ -851,10 +853,7 @@ local function run()
 
   for _, t in ipairs(tracks) do
     if t.group ~= NO_GROUP then
-      local rtrack = r.GetTrack(0, t.reaper_idx)
-      if not r.GetParentTrack(rtrack) then
-        group_members[t.group][#group_members[t.group] + 1] = t
-      end
+      group_members[t.group][#group_members[t.group] + 1] = t
     end
   end
 
@@ -871,53 +870,6 @@ local function run()
     end
   end
   -- (continue even with no active groups — track FX and global sends still apply)
-
-  -- ── Pre-sort: move tracks so group panel order matches session order ────────
-  do
-    r.Undo_BeginBlock()
-    r.PreventUIRefresh(1)
-    local insert_pos = r.CountTracks(0)
-    for g = 1, NUM_GROUPS do
-      if #group_members[g] > 0 then
-        local min_idx = math.huge
-        for _, t in ipairs(group_members[g]) do
-          if t.reaper_idx < min_idx then min_idx = t.reaper_idx end
-        end
-        if min_idx < insert_pos then insert_pos = min_idx end
-      end
-    end
-    local cursor = insert_pos
-    for g = 1, NUM_GROUPS do
-      if #group_members[g] > 0 then
-        table.sort(group_members[g], function(a, b) return a.reaper_idx < b.reaper_idx end)
-        for _, t in ipairs(group_members[g]) do
-          local tr = r.GetTrack(0, t.reaper_idx)
-          if tr then
-            if t.reaper_idx ~= cursor then
-              r.SetOnlyTrackSelected(tr)
-              if t.reaper_idx > cursor then
-                r.ReorderSelectedTracks(cursor, 0)
-              else
-                r.ReorderSelectedTracks(cursor + 1, 0)
-              end
-              for _, t2 in ipairs(tracks) do
-                local tr2 = r.GetTrack(0, t2.reaper_idx)
-                if tr2 then
-                  for ti2 = 0, r.CountTracks(0) - 1 do
-                    if r.GetTrack(0, ti2) == tr2 then t2.reaper_idx = ti2; break end
-                  end
-                end
-              end
-              t.reaper_idx = cursor
-            end
-            cursor = cursor + 1
-          end
-        end
-      end
-    end
-    r.PreventUIRefresh(-1)
-    r.Undo_EndBlock("ReaOrganize: pre-sort tracks", -1)
-  end
 
   -- Stamp GUIDs onto ALL tracks (including stereo-flagged ones) before any moves
   for _, t in ipairs(tracks) do
@@ -982,11 +934,9 @@ local function run()
   r.PreventUIRefresh(1)
 
   -- ── process_group: roots-first DFS ────────────────────────────────────────────
-  -- 1. Move all subtree tracks to consecutive positions.
-  -- 2. Insert folder track above them.
-  -- 3. Recurse into children (they land naturally inside the parent folder).
-  -- 4. Insert send tracks using GUID-based max-position search (no depth traversal).
-  -- 5. One clean depth pass after everything is placed.
+  -- Groups are placed in panel order by moving tracks to next_group_pos,
+  -- which advances after each group is placed. No pre-sort needed.
+  local next_group_pos = nil  -- set before first call; advances after each root group
   local function process_group(g)
     -- Order GUID list by original track position:
     -- direct members and child subtrees are interleaved by their min position,
@@ -1037,19 +987,25 @@ local function run()
     local ordered = ordered_guids(g)
     if #ordered == 0 then return end
 
-    -- Current first position of any track in this subtree
-    local first_pos = math.huge
-    for _, guid in ipairs(ordered) do
-      local p = track_index(guid)
-      if p and p < first_pos then first_pos = p end
+    -- Use next_group_pos if set (panel order), else fall back to current topmost
+    local first_pos
+    if next_group_pos then
+      first_pos = next_group_pos
+    else
+      first_pos = math.huge
+      for _, guid in ipairs(ordered) do
+        local p = track_index(guid)
+        if p and p < first_pos then first_pos = p end
+      end
+      if first_pos == math.huge then return end
     end
-    if first_pos == math.huge then return end
 
-    -- Consolidate subtree tracks to consecutive positions starting at first_pos
+    -- Move all subtree tracks to consecutive positions starting at first_pos
     for idx, guid in ipairs(ordered) do
       local target = first_pos + idx - 1
       local cur    = track_index(guid)
-      if cur and cur ~= target then
+      if cur == nil then goto continue end
+      if cur ~= target then
         local tr = r.GetTrack(0, cur)
         r.SetOnlyTrackSelected(tr)
         if cur > target then
@@ -1058,63 +1014,32 @@ local function run()
           r.ReorderSelectedTracks(target + 1, 0)
         end
       end
+      ::continue::
     end
 
-    -- Insert folder track at first_pos
-    r.InsertTrackAtIndex(first_pos, true)
-    local folder_tr = r.GetTrack(0, first_pos)
-    local grp       = groups[g]
-    r.GetSetMediaTrackInfo_String(folder_tr, "P_NAME", grp.name, true)
-    local fc = parent_use_track_color and to_reaper_color(grp.color_packed)
+    local grp = groups[g]
+    local fc  = parent_use_track_color and to_reaper_color(grp.color_packed)
                                        or  to_reaper_color(parent_color_packed)
-    r.SetTrackColor(folder_tr, fc)
-    folder_track_guid[g] = track_guid(folder_tr)
-    do local pv = parse_pan(grp.pan_str or "C"); if pv then r.SetMediaTrackInfo_Value(folder_tr, "D_PAN", pv) end end
 
-    -- Recurse into children (they are now inside this folder's block)
-    local kids = {}
-    for _, cg in ipairs(group_children_map[g]) do
-      if has_any_active(cg) then kids[#kids+1] = cg end
-    end
-    table.sort(kids)
-    for _, cg in ipairs(kids) do process_group(cg) end
-
-    -- Insert send tracks using GUID-based max-position — no depth traversal needed
+    -- ── Step A: Insert send tracks BEFORE folder (end of member block) ──────
     if grp.sends and #grp.sends > 0 then
       send_track_guids[g] = {}
       for s, send_slot in ipairs(grp.sends) do
-        local last_pos = track_index(folder_track_guid[g]) or first_pos
-        local function scan_last(gg)
-          for _, m in ipairs(group_members[gg]) do
-            if m.guid then
-              local p = track_index(m.guid)
+        -- last_pos = rightmost member track position + any already-inserted sends
+        local last_pos = first_pos + #ordered - 1
+        if send_track_guids[g] then
+          for _, sg in ipairs(send_track_guids[g]) do
+            if sg then
+              local p = track_index(sg)
               if p then last_pos = math.max(last_pos, p) end
             end
           end
-          if send_track_guids[gg] then
-            for _, sg in ipairs(send_track_guids[gg]) do
-              if sg then
-                local p = track_index(sg)
-                if p then last_pos = math.max(last_pos, p) end
-              end
-            end
-          end
-          if folder_track_guid[gg] and gg ~= g then
-            local p = track_index(folder_track_guid[gg])
-            if p then last_pos = math.max(last_pos, p) end
-          end
-          for _, cg in ipairs(group_children_map[gg]) do
-            if has_any_active(cg) then scan_last(cg) end
-          end
         end
-        scan_last(g)
-
         local insert_at = last_pos + 1
         r.InsertTrackAtIndex(insert_at, false)
         local send_tr = r.GetTrack(0, insert_at)
         local stguid  = track_guid(send_tr)
         send_track_guids[g][s] = stguid
-
         if send_slot.template then add_fx(send_tr, send_slot.template) end
         local sname = (send_slot.name ~= "") and send_slot.name or nil
         if sname then r.GetSetMediaTrackInfo_String(send_tr, "P_NAME", sname, true) end
@@ -1123,8 +1048,7 @@ local function run()
           r.SetMediaTrackInfo_Value(send_tr, "I_CUSTOMCOLOR",
             r.ColorToNative(sr2, sg2b, sb2) | 0x1000000)
         end
-
-        -- Wire sends
+        -- Wire send values
         local skey = g..":"..s
         for ti2, t2 in ipairs(tracks) do
           local db_str = send_track_buf[ti2] and send_track_buf[ti2][skey] or ""
@@ -1142,12 +1066,114 @@ local function run()
         end
       end  -- for s
     end
+
+    -- ── Step B: Insert folder track at first_pos (sends are now inside block) ─
+    r.InsertTrackAtIndex(first_pos, true)
+    local folder_tr = r.GetTrack(0, first_pos)
+    r.GetSetMediaTrackInfo_String(folder_tr, "P_NAME", grp.name, true)
+    r.SetTrackColor(folder_tr, fc)
+    folder_track_guid[g] = track_guid(folder_tr)
+    do local pv = parse_pan(grp.pan_str or "C"); if pv then r.SetMediaTrackInfo_Value(folder_tr, "D_PAN", pv) end end
+
+    -- ── Step C: Recurse into children (inside folder block) ──────────────────
+    local kids = {}
+    for _, cg in ipairs(group_children_map[g]) do
+      if has_any_active(cg) then kids[#kids+1] = cg end
+    end
+    table.sort(kids)
+    -- Children are placed inside this folder — disable panel-order positioning for them
+    local saved_pos = next_group_pos
+    next_group_pos = nil
+    for _, cg in ipairs(kids) do process_group(cg) end
+    next_group_pos = saved_pos
   end  -- process_group
 
-  -- Process each root group in index order
+  -- ── Pre-pass: move ALL assigned tracks into panel order ────────────────────
+  -- Stamp GUIDs once while indices are fresh, then move sequentially.
+  do
+    r.PreventUIRefresh(1)
+    -- Stamp GUIDs for every assigned track
+    for g = 1, NUM_GROUPS do
+      for _, m in ipairs(group_members[g]) do
+        local tr = r.GetTrack(0, m.reaper_idx)
+        if tr then
+          local _, gd = r.GetSetMediaTrackInfo_String(tr, "GUID", "", false)
+          m.sort_guid = gd
+        end
+      end
+    end
+    -- Find lowest assigned track index
+    local start = r.CountTracks(0)
+    for g = 1, NUM_GROUPS do
+      for _, m in ipairs(group_members[g]) do
+        if m.reaper_idx < start then start = m.reaper_idx end
+      end
+    end
+    -- Move each track to its target position in panel order
+    local cursor = start
+    for g = 1, NUM_GROUPS do
+      -- Sort members by current reaper_idx to preserve relative order within group
+      table.sort(group_members[g], function(a, b) return a.reaper_idx < b.reaper_idx end)
+      for _, m in ipairs(group_members[g]) do
+        if m.sort_guid then
+          -- Fresh lookup by GUID every time
+          local cur = track_index(m.sort_guid)
+          if cur and cur ~= cursor then
+            local tr = r.GetTrack(0, cur)
+            r.SetOnlyTrackSelected(tr)
+            if cur > cursor then
+              r.ReorderSelectedTracks(cursor, 0)
+            else
+              r.ReorderSelectedTracks(cursor + 1, 0)
+            end
+          end
+          cursor = cursor + 1
+        end
+      end
+    end
+    r.PreventUIRefresh(-1)
+    next_group_pos = start
+  end
   for g2c = 1, NUM_GROUPS do
     if (groups[g2c].routes_to or 0) == 0 and has_any_active(g2c) then
       process_group(g2c)
+      -- Advance next_group_pos past this group's entire block
+      -- (folder + members + sends + all children)
+      if folder_track_guid[g2c] then
+        local fp = track_index(folder_track_guid[g2c])
+        if fp then
+          -- Scan for the rightmost track in this subtree
+          local function subtree_max(gg)
+            local mx = fp
+            local function scan(g3)
+              if folder_track_guid[g3] then
+                local p = track_index(folder_track_guid[g3])
+                if p and p > mx then mx = p end
+              end
+              for _, m in ipairs(group_members[g3]) do
+                if m.guid then
+                  local p = track_index(m.guid)
+                  if p and p > mx then mx = p end
+                end
+              end
+              if send_track_guids[g3] then
+                for _, sg in ipairs(send_track_guids[g3]) do
+                  if sg then
+                    local p = track_index(sg)
+                    if p and p > mx then mx = p end
+                  end
+                end
+              end
+              for _, cg in ipairs(group_children_map[g3]) do
+                if has_any_active(cg) then scan(cg) end
+              end
+            end
+            scan(gg)
+            return mx
+          end
+          next_group_pos = subtree_max(g2c) + 1
+        end
+      end
     end
   end
 
@@ -1337,6 +1363,7 @@ local function run()
   end
 
   -- ── Step 7: insert global send tracks at very bottom ──────────────────────
+  local global_send_guids = {}  -- GUIDs of inserted global send tracks
   if #global_sends > 0 then
     r.Undo_BeginBlock()
     for s, gs in ipairs(global_sends) do
@@ -1346,6 +1373,7 @@ local function run()
       -- Name
       local gsname = gs.name ~= "" and gs.name or ("Global Send "..s)
       r.GetSetMediaTrackInfo_String(gs_track, "P_NAME", gsname, true)
+      global_send_guids[#global_send_guids+1] = track_guid(gs_track)
       -- Color
       if gs.color_packed and gs.color_packed ~= 0x888888 then
         local gr2, gg2, gb2 = unpack_color(gs.color_packed)
@@ -1511,6 +1539,44 @@ local function run()
     r.Undo_EndBlock("ReaOrganize: bypass FX", -1)
   end
 
+  -- ── Trim Lanes ───────────────────────────────────────────────────────────────
+  -- Exact working sequence (no reselection, no PreventUIRefresh):
+  --   1. Select tracks
+  --   2. 40052  → Track: Toggle track volume envelope active
+  --   3. 40891  → Envelope: Toggle display all visible envelopes in lanes for tracks
+  if opt_trim_groups or opt_trim_sends then
+    local prev_sel = {}
+    for ti = 0, r.CountTracks(0) - 1 do
+      prev_sel[ti] = r.IsTrackSelected(r.GetTrack(0, ti))
+    end
+    if opt_trim_groups then
+      r.Main_OnCommand(r.NamedCommandLookup("_SWS_SELFOLDSTARTS"), 0)
+      r.Main_OnCommand(40052, 0)   -- Track: Toggle track volume envelope active
+      r.Main_OnCommand(40891, 0)   -- Envelope: Toggle display all visible envelopes in lanes for tracks
+    end
+    if opt_trim_sends then
+      r.Main_OnCommand(40297, 0)   -- Unselect all
+      for _, sguids in pairs(send_track_guids) do
+        for _, sg in ipairs(sguids) do
+          if sg then
+            local _, tr = find_track_by_guid(sg)
+            if tr then r.SetTrackSelected(tr, true) end
+          end
+        end
+      end
+      for _, gg in ipairs(global_send_guids) do
+        local _, tr = find_track_by_guid(gg)
+        if tr then r.SetTrackSelected(tr, true) end
+      end
+      r.Main_OnCommand(40052, 0)   -- Track: Toggle track volume envelope active
+      r.Main_OnCommand(40891, 0)   -- Envelope: Toggle display all visible envelopes in lanes for tracks
+    end
+    -- Restore selection
+    for ti = 0, r.CountTracks(0) - 1 do
+      r.SetTrackSelected(r.GetTrack(0, ti), prev_sel[ti])
+    end
+  end
+
   -- GUI state intentionally NOT reset here — tracks/groups keep their assignments
 end
 
@@ -1575,11 +1641,15 @@ local function preset_to_lines(p, slot)
   w("master_name", slot.master_name or "")
   w("master_fx", slot.master_fx_chain or "")
   w("opt_fx_folder", slot.opt_fx_folder or "")
-  w("opt_snd_bot", slot.opt_sends_at_bottom and "1" or "0")
+  w("opt_snd_bot", slot.opt_sends_at_bottom   and "1" or "0")
+  w("opt_snd_ftp", slot.opt_sends_folder_top  and "1" or "0")
+  w("opt_snd_fbt", slot.opt_sends_folder_bot  and "1" or "0")
   w("opt_snd_clr", slot.opt_send_color_packed or 0x888888)
   w("opt_snd_utc", slot.opt_send_use_trk_color and "1" or "0")
-  w("opt_fx_bins", slot.opt_fx_bypass_inserts and "1" or "0")
-  w("opt_fx_bchn", slot.opt_fx_bypass_chains and "1" or "0")
+  w("opt_fx_bins", slot.opt_fx_bypass_inserts  and "1" or "0")
+  w("opt_fx_bchn", slot.opt_fx_bypass_chains   and "1" or "0")
+  w("opt_trimlg",  slot.opt_trim_groups        and "1" or "0")
+  w("opt_trimls",  slot.opt_trim_sends         and "1" or "0")
   w("ps_chains",   slot.picker_show_chains ~= false and "1" or "0")
   w("ps_vst3",     slot.picker_show_vst3   ~= false and "1" or "0")
   w("ps_vst",      slot.picker_show_vst    ~= false and "1" or "0")
@@ -1630,8 +1700,12 @@ local function lines_to_preset(lines)
   slot.opt_sends_at_bottom    = kv["opt_snd_bot"] == "1"
   slot.opt_send_color_packed  = tonumber(kv["opt_snd_clr"])    or 0x888888
   slot.opt_send_use_trk_color = kv["opt_snd_utc"] == "1"
+  slot.opt_sends_folder_top   = kv["opt_snd_ftp"] == "1"
+  slot.opt_sends_folder_bot   = kv["opt_snd_fbt"] == "1"
   slot.opt_fx_bypass_inserts  = kv["opt_fx_bins"] == "1"
   slot.opt_fx_bypass_chains   = kv["opt_fx_bchn"] == "1"
+  slot.opt_trim_groups        = kv["opt_trimlg"]  == "1"
+  slot.opt_trim_sends         = kv["opt_trimls"]  == "1"
   slot.picker_show_chains = kv["ps_chains"] ~= "0"
   slot.picker_show_vst3   = kv["ps_vst3"]   ~= "0"
   slot.picker_show_vst    = kv["ps_vst"]    ~= "0"
@@ -1776,6 +1850,8 @@ local function load_presets()
         slot.opt_fx_folder          = r.GetExtState(EXT_SECTION, "preset_"..p.."_opt_fxfolder")
         if slot.opt_fx_folder == "" then slot.opt_fx_folder = nil end
         slot.opt_sends_folder_top   = r.GetExtState(EXT_SECTION, "preset_"..p.."_opt_sndftp") == "1"
+    slot.opt_trim_groups      = r.GetExtState(EXT_SECTION, "preset_"..p.."_opt_trimgrp") == "1"
+    slot.opt_trim_sends       = r.GetExtState(EXT_SECTION, "preset_"..p.."_opt_trimsnd") == "1"
         slot.opt_sends_folder_bot   = r.GetExtState(EXT_SECTION, "preset_"..p.."_opt_sndfbt") == "1"
               slot.opt_sends_at_bottom    = r.GetExtState(EXT_SECTION, "preset_"..p.."_opt_sndbot") == "1"
         slot.opt_send_color_packed  = tonumber(r.GetExtState(EXT_SECTION, "preset_"..p.."_opt_sndclr")) or 0x888888
@@ -2314,7 +2390,7 @@ local function export_presets()
   if r.JS_Dialog_BrowseForSaveFile then
     local ok, path = dlg_JS_BrowseForSaveFile("Export ReaOrganize Presets",
       r.GetProjectPath("") ~= "" and r.GetProjectPath("") or r.GetResourcePath(), 
-      "reaorganize_presets.roPre", "ReaOrganize Presets (*.roPre) *.roPre All files *.* ")
+      "reaorganize_presets.roPre", "ReaOrganize Presets (*.roPre) *.roPre All files *.* ")
     if ok == 1 and path and path ~= "" then
       out_path = path
       if not out_path:match("%.roPre$") then out_path = out_path .. ".roPre" end
@@ -2338,7 +2414,7 @@ local function import_presets()
   if r.JS_Dialog_BrowseForOpenFiles then
     local ok, path = dlg_JS_BrowseForOpenFiles("Import ReaOrganize Presets",
       r.GetProjectPath("") ~= "" and r.GetProjectPath("") or r.GetResourcePath(),
-      "", "ReaOrganize Presets (*.roPre) *.roPre All files *.* ", false)
+      "", "ReaOrganize Presets (*.roPre) *.roPre All files *.* ", false)
     if ok == 1 and path and path ~= "" then in_path = path end
   else
     -- Manual fallback: ask user to type path
@@ -3589,6 +3665,24 @@ local function draw_gui()
       end
     end
 
+    -- ── Trim Lanes ──────────────────────────────────────────────────────────
+    r.ImGui_TableNextRow(ctx)
+    r.ImGui_TableSetColumnIndex(ctx, 0)
+    do local _, fpytl = r.ImGui_GetStyleVar(ctx, r.ImGui_StyleVar_FramePadding())
+      r.ImGui_SetCursorPosY(ctx, r.ImGui_GetCursorPosY(ctx) + fpytl)
+      r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Text(), 0xAAAAAAAA)
+      r.ImGui_Text(ctx, "Trim Lanes")
+      r.ImGui_PopStyleColor(ctx)
+    end
+    r.ImGui_TableSetColumnIndex(ctx, 1)
+    do
+      local tl_ch1, tl_v1 = r.ImGui_Checkbox(ctx, "Groups##tlg", opt_trim_groups)
+      if tl_ch1 then push_undo(); opt_trim_groups = tl_v1 end
+      r.ImGui_SameLine(ctx, 0, 8)
+      local tl_ch2, tl_v2 = r.ImGui_Checkbox(ctx, "Sends##tls", opt_trim_sends)
+      if tl_ch2 then push_undo(); opt_trim_sends = tl_v2 end
+    end
+
     -- ── Parent Color ────────────────────────────────────────────────────────
     r.ImGui_TableNextRow(ctx)
     r.ImGui_TableSetColumnIndex(ctx, 0)
@@ -3759,6 +3853,8 @@ local function draw_gui()
                       slot.opt_sends_at_bottom    = opt_sends_at_bottom
             slot.opt_sends_folder_top   = opt_sends_folder_top
             slot.opt_sends_folder_bot   = opt_sends_folder_bot
+            slot.opt_trim_groups        = opt_trim_groups
+            slot.opt_trim_sends         = opt_trim_sends
             slot.opt_send_color_packed  = opt_send_color_packed
             slot.opt_send_use_trk_color = opt_send_use_trk_color
             slot.opt_fx_bypass_inserts  = opt_fx_bypass_inserts
@@ -3833,6 +3929,10 @@ local function draw_gui()
         -- Restore options from preset
         if slot.opt_fx_folder          ~= nil then opt_fx_folder          = slot.opt_fx_folder          end
               if slot.opt_sends_at_bottom    ~= nil then opt_sends_at_bottom    = slot.opt_sends_at_bottom    end
+        if slot.opt_sends_folder_top   ~= nil then opt_sends_folder_top   = slot.opt_sends_folder_top   end
+        if slot.opt_sends_folder_bot   ~= nil then opt_sends_folder_bot   = slot.opt_sends_folder_bot   end
+        if slot.opt_trim_groups        ~= nil then opt_trim_groups        = slot.opt_trim_groups        end
+        if slot.opt_trim_sends         ~= nil then opt_trim_sends         = slot.opt_trim_sends         end
         if slot.opt_send_color_packed  ~= nil then opt_send_color_packed  = slot.opt_send_color_packed  end
         if slot.opt_send_use_trk_color ~= nil then opt_send_use_trk_color = slot.opt_send_use_trk_color end
         if slot.opt_fx_bypass_inserts  ~= nil then opt_fx_bypass_inserts  = slot.opt_fx_bypass_inserts  end
