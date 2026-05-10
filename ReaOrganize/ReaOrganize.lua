@@ -1,11 +1,11 @@
 -- @description ReaOrganize
 -- @author vazupReaperScripts
--- @version 1.50
+-- @version 1.51
 -- @repository https://github.com/duplobaustein/vazupReaperScripts
 -- @links
 --   GitHub https://github.com/duplobaustein/vazupReaperScripts
 -- @about
---   # ReaOrganize v1.50
+--   # ReaOrganize v1.51
 --   ReaOrganize is a session organizer for REAPER. It lets you design your session's structure, defining groups, track send routing, FX chains, panning and colors — and then executes everything in one click via the RUN button. The core idea is that ReaOrganize works as a blueprint layer on top of your REAPER session. You define how your session should be structured in the script, and RUN builds it.
 --
 --   Basic Workflow 
@@ -35,7 +35,7 @@ if not r.ImGui_CreateContext then
 end
 
 -- ── Version ───────────────────────────────────────────────────────────────────
-local VERSION = "v1.50"
+local VERSION = "v1.51"
 
 -- ── Constants ─────────────────────────────────────────────────────────────────
 local MAX_GROUPS   = 100
@@ -45,7 +45,8 @@ local WIN_W, WIN_H = 1750, 720
 local NO_GROUP     = 0   -- sentinel: unassigned
 
 -- ── Mutable state (not constants) ───────────────────────────────────────────
-local NUM_GROUPS   = 8   -- can grow/shrink at runtime
+local NUM_GROUPS   = 1   -- can grow/shrink at runtime
+local NUM_BUSES    = 1   -- can grow/shrink at runtime
 
 -- ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -130,6 +131,9 @@ local font_xlarge = nil  -- double-size font for current track name
 
 local tracks      = {}   -- { name, reaper_idx, group, selected }
 local groups      = {}   -- { name, color_packed, sends[] }  sends = array of {template}
+local buses       = {}   -- { name, color_packed, sends[], pan_str, folder_template, routes_to }
+local rename_bus_buf  = {}
+local bus_selected    = {}  -- b -> true/false
 
 local rename_track_buf  = {}  -- per-track rename buffer
 local rename_group_buf  = {}  -- per-group rename buffer
@@ -201,7 +205,13 @@ local master_fx_chain     = nil
 -- ── Options state ────────────────────────────────────────────────────────────
 local opt_fx_folder          = nil   -- custom FX chain folder path (nil = default)
 local opt_sends_at_bottom    = false -- move sends to bottom (above global sends)
+local bus_color_packed      = pack_color(80, 80, 80)  -- default bus folder color
+local bus_use_panel_color   = false  -- use panel color for buses
+local opt_spacer_all    = false  -- TCP spacer before every group
+local opt_spacer_bus    = false  -- TCP spacer before groups routed to a bus
+local opt_spacer_master = false  -- TCP spacer before groups routed to master
 local opt_sends_folder_top   = false -- move sends to top of their folder (just after folder track)
+local opt_trim_buses         = false -- enable Trim Volume lane on bus tracks
 local opt_trim_groups        = false -- enable Trim Volume lane on folder tracks
 local opt_trim_sends         = false -- enable Trim Volume lane on send tracks
 local opt_sends_folder_bot   = true  -- move sends to bottom of their folder (default)
@@ -216,7 +226,7 @@ local opt_fx_bypass_chains   = false -- bypass all FX-chain tracks after run
 local group_load_version = 0  -- incremented on preset load to bust ImGui InputText cache
 
 local function make_snapshot()
-  local snap = { NUM_GROUPS = NUM_GROUPS, groups = {}, tracks = {}, global_sends = {}, global_send_vals = {} }
+  local snap = { NUM_GROUPS=NUM_GROUPS, NUM_BUSES=NUM_BUSES, groups={}, buses={}, tracks={}, global_sends={}, global_send_vals={} }
   for g = 1, NUM_GROUPS do
     local grp = groups[g]
     local snap_sends = {}
@@ -231,6 +241,11 @@ local function make_snapshot()
       sends           = snap_sends,
       routes_to       = grp.routes_to or 0,
     }
+  end
+  for b=1,NUM_BUSES do
+    local bus=buses[b]; local sbs={}
+    for s=1,#(bus.sends or {}) do local sl=bus.sends[s]; sbs[s]={name=sl.name,template=sl.template,color_packed=sl.color_packed,pre_fader=sl.pre_fader or false} end
+    snap.buses[b]={name=bus.name,color_packed=bus.color_packed,folder_template=bus.folder_template,sends=sbs,routes_to=bus.routes_to or 0,pan_str=bus.pan_str or "C"}
   end
   for i, t in ipairs(tracks) do
     local snap_tsends = {}
@@ -261,12 +276,25 @@ local function make_snapshot()
   snap.opt_fx_bypass_inserts  = opt_fx_bypass_inserts
   snap.opt_fx_bypass_chains   = opt_fx_bypass_chains
   snap.parent_color_packed    = parent_color_packed
+  snap.bus_color_packed       = bus_color_packed
+  snap.bus_use_panel_color    = bus_use_panel_color
   snap.parent_use_track_color = parent_use_track_color
   return snap
 end
 
 local function restore_snapshot(snap)
   NUM_GROUPS = snap.NUM_GROUPS
+  if snap.NUM_BUSES then NUM_BUSES = snap.NUM_BUSES end
+  if snap.buses then
+    buses={}; rename_bus_buf={}
+    for b=1,NUM_BUSES do
+      local sb=snap.buses[b]; if not sb then break end
+      local rs={}
+      for s,sl in ipairs(sb.sends or {}) do rs[s]={name=sl.name or "",template=sl.template,color_packed=sl.color_packed or opt_send_color_packed,pre_fader=sl.pre_fader or false} end
+      buses[b]={name=sb.name,color_packed=sb.color_packed,folder_template=sb.folder_template,sends=rs,routes_to=sb.routes_to or 0,pan_str=sb.pan_str or "C"}
+      rename_bus_buf[b]=sb.name
+    end
+  end
   groups = {}
   rename_group_buf = {}
   for g = 1, NUM_GROUPS do
@@ -324,6 +352,8 @@ local function restore_snapshot(snap)
   if snap.opt_fx_bypass_inserts  ~= nil then opt_fx_bypass_inserts  = snap.opt_fx_bypass_inserts  end
   if snap.opt_fx_bypass_chains   ~= nil then opt_fx_bypass_chains   = snap.opt_fx_bypass_chains   end
   if snap.parent_color_packed    ~= nil then parent_color_packed    = snap.parent_color_packed    end
+  if snap.bus_color_packed       ~= nil then bus_color_packed       = snap.bus_color_packed       end
+  if snap.bus_use_panel_color    ~= nil then bus_use_panel_color    = snap.bus_use_panel_color    end
   if snap.parent_use_track_color ~= nil then parent_use_track_color = snap.parent_use_track_color end
 end
 
@@ -628,6 +658,10 @@ local function apply_picker_result(name)
     else
       tracks[ps.i].fx_chain = name
     end
+  elseif ps.target == "bus" then
+    buses[ps.b].folder_template = name
+  elseif ps.target == "bsend" then
+    buses[ps.b].sends[ps.s].template = name
   elseif ps.target == "folder" then
     groups[ps.g].folder_template = name
     if ps.mod_ctrl then
@@ -819,6 +853,26 @@ local function init_groups()
   end
 end
 
+local function init_buses()
+  buses = {}; rename_bus_buf = {}
+  local default_colors = {
+    pack_color( 60, 120, 220),  -- 1 blue
+    pack_color( 60, 180, 140),  -- 2 teal
+    pack_color(180,  60, 220),  -- 3 purple
+    pack_color(220, 160,  40),  -- 4 amber
+    pack_color(220,  60,  60),  -- 5 red
+    pack_color( 60, 200,  60),  -- 6 green
+    pack_color(200, 200,  60),  -- 7 yellow
+    pack_color(200,  60, 160),  -- 8 pink
+  }
+  for i = 1, NUM_BUSES do
+    buses[i] = { name="Bus "..i,
+      color_packed = default_colors[i] or pack_color(120, 120, 200),
+      sends={}, pan_str="C", folder_template=nil, routes_to=0 }
+    rename_bus_buf[i] = "Bus "..i
+  end
+end
+
 -- ── Run: create folder tracks ─────────────────────────────────────────────────
 
 local function run()
@@ -913,7 +967,7 @@ local function run()
   for g2b = 1, NUM_GROUPS do group_children_map[g2b] = {} end
   for g2b = 1, NUM_GROUPS do
     local par = (groups[g2b].routes_to or 0)
-    if par ~= 0 and par <= NUM_GROUPS then
+    if par > 0 and par <= NUM_GROUPS then  -- skip negative (bus) and 0 (master)
       group_children_map[par][#group_children_map[par]+1] = g2b
     end
   end
@@ -1135,7 +1189,8 @@ local function run()
     next_group_pos = start
   end
   for g2c = 1, NUM_GROUPS do
-    if (groups[g2c].routes_to or 0) == 0 and has_any_active(g2c) then
+    local rt2c = groups[g2c].routes_to or 0
+    if (rt2c == 0 or rt2c < 0) and has_any_active(g2c) then
       process_group(g2c)
       -- Advance next_group_pos past this group's entire block
       -- (folder + members + sends + all children)
@@ -1194,7 +1249,8 @@ local function run()
     end
   end
   for g2d = 1, NUM_GROUPS do
-    if (groups[g2d].routes_to or 0) == 0 and has_any_active(g2d) then
+    local rt2d = groups[g2d].routes_to or 0
+    if (rt2d == 0 or rt2d < 0) and has_any_active(g2d) then
       assign_levels(g2d, 0)
     end
   end
@@ -1418,16 +1474,23 @@ local function run()
           end
         end
       end
+      -- Find position of first global send (group sends go above them)
+      local global_send_fence = r.CountTracks(0)  -- default: absolute bottom
+      if global_send_guids and #global_send_guids > 0 then
+        for _, gg in ipairs(global_send_guids) do
+          local gi = track_index(gg)
+          if gi and gi < global_send_fence then global_send_fence = gi end
+        end
+      end
       table.sort(all_st, function(a, b) return a.idx > b.idx end)
       for _, st in ipairs(all_st) do
         local cur2 = track_index(st.guid)
         if cur2 then
-          local dest = r.CountTracks(0)  -- always the very last position
-          if cur2 ~= dest - 1 then
-            local str = r.GetTrack(0, cur2)
-            r.SetOnlyTrackSelected(str)
-            r.ReorderSelectedTracks(dest, 0)
-          end
+          -- Move to just above global sends; fence adjusts as tracks shift
+          local str = r.GetTrack(0, cur2)
+          r.SetOnlyTrackSelected(str)
+          r.ReorderSelectedTracks(global_send_fence, 0)
+          if cur2 >= global_send_fence then global_send_fence = global_send_fence + 1 end
         end
       end
     else  -- opt_sends_folder_top: per group, move sends to just after folder track
@@ -1441,8 +1504,9 @@ local function run()
               grp_sends[#grp_sends+1] = sg
             end
           end
-          -- Move ascending: each send goes to fi+1, pushing previous ones down by 1
-          for k, sg in ipairs(grp_sends) do
+          -- Move in reverse order so S1 ends up directly after folder (not reversed)
+          for k = #grp_sends, 1, -1 do
+            local sg = grp_sends[k]
             local fi = track_index(fguid)  -- re-lookup each time
             if fi then
               local dest = fi + 1
@@ -1475,7 +1539,8 @@ local function run()
           end
         end
         for grr = 1, NUM_GROUPS do
-          if (groups[grr].routes_to or 0) == 0 and has_any_active(grr) then ral2(grr, 0) end
+          local rt_grr = groups[grr].routes_to or 0
+    if (rt_grr == 0 or rt_grr < 0) and has_any_active(grr) then ral2(grr, 0) end
         end
       end  -- ral2
       local tl2 = {}
@@ -1577,6 +1642,121 @@ local function run()
     end
   end
 
+  -- ── Bus tracks: insert at top, wire groups to buses ─────────────────────────
+  local bus_track_guids = {}       -- [b] = GUID of inserted bus track
+  local bus_send_track_guids = {}  -- flat list of bus send track GUIDs
+  if NUM_BUSES > 0 then
+    r.Undo_BeginBlock()
+    r.PreventUIRefresh(1)
+    -- Insert bus tracks at top in panel order (Bus 1 at position 0)
+    local ins = 0
+    for b = 1, NUM_BUSES do
+      r.InsertTrackAtIndex(ins, false)
+      local btr = r.GetTrack(0, ins)
+      local bus = buses[b]
+      r.GetSetMediaTrackInfo_String(btr, "P_NAME", bus.name, true)
+      local bc = bus_use_panel_color and to_reaper_color(bus.color_packed) or to_reaper_color(bus_color_packed)
+      r.SetTrackColor(btr, bc)
+      bus_track_guids[b] = track_guid(btr)
+      do local pv=parse_pan(bus.pan_str or "C"); if pv then r.SetMediaTrackInfo_Value(btr,"D_PAN",pv) end end
+      if bus.folder_template then add_fx(btr, bus.folder_template) end
+      ins = ins + 1
+      -- Bus send tracks
+      for s, sl in ipairs(bus.sends or {}) do
+        if sl.name and sl.name ~= "" then
+          r.InsertTrackAtIndex(ins, false)
+          local str2 = r.GetTrack(0, ins)
+          r.GetSetMediaTrackInfo_String(str2, "P_NAME", sl.name, true)
+          if sl.color_packed then
+            local sr2,sg2,sb2=unpack_color(sl.color_packed)
+            r.SetMediaTrackInfo_Value(str2,"I_CUSTOMCOLOR",r.ColorToNative(sr2,sg2,sb2)|0x1000000)
+          end
+          if sl.template then add_fx(str2, sl.template) end
+          bus_send_track_guids[#bus_send_track_guids+1] = track_guid(str2)
+          -- Wire bus → send
+          local sidx=r.CreateTrackSend(btr, str2)
+          r.SetTrackSendInfo_Value(btr,0,sidx,"D_VOL",1.0)
+          r.SetTrackSendInfo_Value(btr,0,sidx,"I_SENDMODE",sl.pre_fader and 3 or 0)
+          ins = ins + 1
+        end
+      end
+    end
+    -- Bus-to-bus routing
+    for b = 1, NUM_BUSES do
+      local rt = buses[b].routes_to or 0
+      if rt ~= 0 and bus_track_guids[rt] then
+        local _,src_btr=find_track_by_guid(bus_track_guids[b])
+        local _,dst_btr=find_track_by_guid(bus_track_guids[rt])
+        if src_btr and dst_btr then
+          local si=r.CreateTrackSend(src_btr,dst_btr)
+          r.SetTrackSendInfo_Value(src_btr,0,si,"D_VOL",1.0)
+          r.SetTrackSendInfo_Value(src_btr,0,si,"I_SENDMODE",0)
+          r.SetMediaTrackInfo_Value(src_btr,"B_MAINSEND",0)
+        end
+      end
+    end
+    -- Wire group folder tracks to their bus
+    for g = 1, NUM_GROUPS do
+      local rt = groups[g].routes_to or 0
+      if rt < 0 then  -- negative index = bus
+        local b = -rt
+        if bus_track_guids[b] and folder_track_guid[g] then
+          local _,ftr2=find_track_by_guid(folder_track_guid[g])
+          local _,btr2=find_track_by_guid(bus_track_guids[b])
+          if ftr2 and btr2 then
+            local si=r.CreateTrackSend(ftr2,btr2)
+            r.SetTrackSendInfo_Value(ftr2,0,si,"D_VOL",1.0)
+            r.SetTrackSendInfo_Value(ftr2,0,si,"I_SENDMODE",0)
+            r.SetMediaTrackInfo_Value(ftr2,"B_MAINSEND",0)
+          end
+        end
+      end
+    end
+    r.PreventUIRefresh(-1)
+    r.Undo_EndBlock("ReaOrganize: insert bus tracks", -1)
+  end
+
+  -- ── Trim Lanes: busses ───────────────────────────────────────────────────────
+  if opt_trim_buses and (#bus_track_guids > 0 or #bus_send_track_guids > 0) then
+    r.Main_OnCommand(40297, 0)  -- Unselect all
+    for b = 1, NUM_BUSES do
+      if bus_track_guids[b] then
+        local _, btr = find_track_by_guid(bus_track_guids[b])
+        if btr then r.SetTrackSelected(btr, true) end
+      end
+    end
+    for _, sg in ipairs(bus_send_track_guids) do
+      local _, bstr = find_track_by_guid(sg)
+      if bstr then r.SetTrackSelected(bstr, true) end
+    end
+    r.Main_OnCommand(40052, 0)   -- Track: Toggle track volume envelope active
+    r.Main_OnCommand(40891, 0)   -- Envelope: Toggle display all visible envelopes in lanes
+  end
+
+  -- ── Spacers: REAPER v7 visual spacer via track state chunk ──────────────────
+  if opt_spacer_all or opt_spacer_bus or opt_spacer_master then
+    r.Undo_BeginBlock()
+    for g = 1, NUM_GROUPS do
+      if folder_track_guid[g] then
+        local rt = groups[g].routes_to or 0
+        local ns = opt_spacer_all
+          or (opt_spacer_bus    and rt < 0)
+          or (opt_spacer_master and rt == 0)
+        if ns then
+          local _, ftr = find_track_by_guid(folder_track_guid[g])
+          if ftr then
+            local ok2, chunk = r.GetTrackStateChunk(ftr, "", false)
+            if ok2 and chunk and not chunk:find("\nSPACER ") then
+              chunk = chunk:gsub("(<TRACK[^\n]*\n)", "%1SPACER 1\n", 1)
+              r.SetTrackStateChunk(ftr, chunk, false)
+            end
+          end
+        end
+      end
+    end
+    r.Undo_EndBlock("ReaOrganize: set visual spacers", -1)
+  end
+
   -- GUI state intentionally NOT reset here — tracks/groups keep their assignments
 end
 
@@ -1654,7 +1834,21 @@ local function preset_to_lines(p, slot)
   w("ps_vst3",     slot.picker_show_vst3   ~= false and "1" or "0")
   w("ps_vst",      slot.picker_show_vst    ~= false and "1" or "0")
   w("ps_clap",     slot.picker_show_clap   ~= false and "1" or "0")
-  w("ps_js",       slot.picker_show_js     ~= false and "1" or "0")
+  w("ps_js",    slot.picker_show_js     ~= false and "1" or "0")
+  w("spa_all",  slot.opt_spacer_all     and "1" or "0")
+  w("spa_bus",  slot.opt_spacer_bus     and "1" or "0")
+  w("spa_mst",  slot.opt_spacer_master  and "1" or "0")
+  w("nbus",     #(slot.buses or {}))
+  for b=1,#(slot.buses or {}) do
+    local bus=slot.buses[b]
+    w("b"..b.."_nm",  bus.name); w("b"..b.."_cl", bus.color_packed)
+    w("b"..b.."_fx",  bus.folder_template or ""); w("b"..b.."_rt", bus.routes_to or 0)
+    w("b"..b.."_pan", bus.pan_str or "C"); w("b"..b.."_ns", #(bus.sends or {}))
+    for s=1,#(bus.sends or {}) do local sl=bus.sends[s]
+      w("b"..b.."_s"..s.."_t",sl.template or ""); w("b"..b.."_s"..s.."_n",sl.name or "")
+      w("b"..b.."_s"..s.."_c",sl.color_packed or 0x888888); w("b"..b.."_s"..s.."_p",sl.pre_fader and "1" or "0")
+    end
+  end
   for g = 1, #slot.groups do
     local grp = slot.groups[g]
     w("g"..g.."_name",   grp.name)
@@ -1711,6 +1905,21 @@ local function lines_to_preset(lines)
   slot.picker_show_vst    = kv["ps_vst"]    ~= "0"
   slot.picker_show_clap   = kv["ps_clap"]   ~= "0"
   slot.picker_show_js     = kv["ps_js"]     ~= "0"
+  slot.opt_spacer_all          = kv["spa_all"] == "1"
+  slot.opt_spacer_bus          = kv["spa_bus"] == "1"
+  slot.opt_spacer_master       = kv["spa_mst"] == "1"
+  local nb2 = tonumber(kv["nbus"]) or 0
+  slot.buses = {}
+  for b=1,nb2 do
+    local ns2=tonumber(kv["b"..b.."_ns"]) or 0; local bsnd={}
+    for s=1,ns2 do bsnd[s]={template=kv["b"..b.."_s"..s.."_t"]~="" and kv["b"..b.."_s"..s.."_t"] or nil,
+      name=kv["b"..b.."_s"..s.."_n"] or "",color_packed=tonumber(kv["b"..b.."_s"..s.."_c"]) or 0x888888,
+      pre_fader=kv["b"..b.."_s"..s.."_p"]=="1"} end
+    slot.buses[b]={name=kv["b"..b.."_nm"] or "Bus "..b,
+      color_packed=tonumber(kv["b"..b.."_cl"]) or pack_color(80,160,220),
+      folder_template=kv["b"..b.."_fx"]~="" and kv["b"..b.."_fx"] or nil,
+      routes_to=tonumber(kv["b"..b.."_rt"]) or 0,pan_str=kv["b"..b.."_pan"] or "C",sends=bsnd}
+  end
   local ng = tonumber(kv["num_groups"]) or 0
   for g = 1, ng do
     local grp = {}
@@ -2473,6 +2682,23 @@ local function draw_gui()
   if pending_color_action then
     local pca = pending_color_action
     pending_color_action = nil
+    -- Shared helpers for bus color actions
+    local function bus_sub(b0)
+      local r2={b0}; for bb=1,NUM_BUSES do if (buses[bb].routes_to or 0)==b0 then
+        for _,v in ipairs(bus_sub(bb)) do r2[#r2+1]=v end end end; return r2
+    end
+    local function grp_sub(g0)
+      local r2={g0}; for gg=1,NUM_GROUPS do if (groups[gg].routes_to or 0)==g0 then
+        for _,v in ipairs(grp_sub(gg)) do r2[#r2+1]=v end end end; return r2
+    end
+    local function apply_bus_color(bb, cp)
+      buses[bb].color_packed=cp
+      for g=1,NUM_GROUPS do
+        if (groups[g].routes_to or 0)==-bb then
+          for _,gg in ipairs(grp_sub(g)) do groups[gg].color_packed=cp end
+        end
+      end
+    end
     local pmod_ctrl  = r.ImGui_IsKeyDown(ctx, r.ImGui_Key_LeftCtrl   and r.ImGui_Key_LeftCtrl()   or 641) or
                        r.ImGui_IsKeyDown(ctx, r.ImGui_Key_RightCtrl  and r.ImGui_Key_RightCtrl()  or 645)
     local pmod_shift = r.ImGui_IsKeyDown(ctx, r.ImGui_Key_LeftShift  and r.ImGui_Key_LeftShift()  or 640) or
@@ -2508,6 +2734,25 @@ local function draw_gui()
             groups[gg].color_packed = cycle_brightness(groups[gg].color_packed)
           end
         end
+      end
+    elseif pca.action == "RB" then
+      push_undo()
+      if pmod_shift then
+        local shift_cp = random_color()  -- one color for the whole subtree
+        for _,bb in ipairs(bus_sub(pca.g)) do apply_bus_color(bb, shift_cp) end
+      elseif pmod_ctrl then
+        for bb=1,NUM_BUSES do if bus_selected[bb] then apply_bus_color(bb, random_color()) end end
+      else
+        apply_bus_color(pca.g, random_color())
+      end
+    elseif pca.action == "AB" then
+      push_undo()
+      if pmod_shift then
+        for _,bb in ipairs(bus_sub(pca.g)) do apply_bus_color(bb, cycle_brightness(buses[bb].color_packed)) end
+      elseif pmod_ctrl then
+        for bb=1,NUM_BUSES do if bus_selected[bb] then apply_bus_color(bb, cycle_brightness(buses[bb].color_packed)) end end
+      else
+        apply_bus_color(pca.g, cycle_brightness(buses[pca.g].color_packed))
       end
     end
   end
@@ -2558,10 +2803,418 @@ local function draw_gui()
   if r.ImGui_BeginChild(ctx, "left_scroll", groups_w, avail_h) then
   groups_w = select(1, r.ImGui_GetContentRegionAvail(ctx))  -- adjust for scrollbar
 
+  -- ── Bus panel ──────────────────────────────────────────────────────────────
+  if r.ImGui_BeginTable(ctx, "bushdr", 1, r.ImGui_TableFlags_BordersOuter(), groups_w, 0) then
+    r.ImGui_TableSetupColumn(ctx, "##busseshdr", r.ImGui_TableColumnFlags_WidthStretch())
+    r.ImGui_TableNextRow(ctx, r.ImGui_TableRowFlags_Headers())
+    r.ImGui_TableSetColumnIndex(ctx, 0)
+    r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Text(), 0xFF6666FF)
+    r.ImGui_TableHeader(ctx, "Busses")
+    r.ImGui_PopStyleColor(ctx)
+    r.ImGui_EndTable(ctx)
+  end
+
+  local bus_flags = r.ImGui_TableFlags_BordersOuter()
+    | r.ImGui_TableFlags_BordersInnerV()
+  local bus_pend_del      = nil
+  local bus_pend_del_lst  = nil
+  local bus_pend_move     = nil
+  local bus_pend_send_del = nil
+  if r.ImGui_BeginTable(ctx, "bus_main", 6, bus_flags, groups_w, 0) then
+    r.ImGui_TableSetupColumn(ctx, "#",         r.ImGui_TableColumnFlags_WidthFixed(),  42)
+    r.ImGui_TableSetupColumn(ctx, "Bus Name",  r.ImGui_TableColumnFlags_WidthStretch())
+    r.ImGui_TableSetupColumn(ctx, "##bdel",    r.ImGui_TableColumnFlags_WidthFixed(),  22)
+    r.ImGui_TableSetupColumn(ctx, "Color",     r.ImGui_TableColumnFlags_WidthFixed(),  76)
+    r.ImGui_TableSetupColumn(ctx, "##bvals",   r.ImGui_TableColumnFlags_WidthFixed(), 100)
+    r.ImGui_TableSetupColumn(ctx, "##bprepost",r.ImGui_TableColumnFlags_WidthFixed(),  28)
+    r.ImGui_TableNextRow(ctx, r.ImGui_TableRowFlags_Headers())
+    local bus_hdr = { [0]="##bhdr0",[1]="Bus Name",[2]="##bdel2",[3]="Color",[4]="##bvals2",[5]="##bprepost2" }
+    local bus_table_left_x, bus_cell_pad_x = 0, 0
+    for ci = 0, 5 do
+      r.ImGui_TableSetColumnIndex(ctx, ci)
+      if ci == 0 then bus_table_left_x, _ = r.ImGui_GetCursorScreenPos(ctx); bus_cell_pad_x, _ = r.ImGui_GetStyleVar(ctx, r.ImGui_StyleVar_CellPadding()) end
+      if ci == 3 then
+        local cw=r.ImGui_GetContentRegionAvail(ctx); local tw=r.ImGui_CalcTextSize(ctx,"Color")
+        r.ImGui_SetCursorPosX(ctx, r.ImGui_GetCursorPosX(ctx)+math.max(0,math.floor((cw-tw)/2)))
+        r.ImGui_TableHeader(ctx,"Color")
+      else r.ImGui_TableHeader(ctx, bus_hdr[ci]) end
+    end
+    local bus_line_x0 = bus_table_left_x - bus_cell_pad_x - 1
+    local bus_line_x1 = bus_line_x0 + groups_w + 1
+    local bus_dl = r.ImGui_GetWindowDrawList(ctx)
+    local bmod_alt   = r.ImGui_IsKeyDown(ctx, r.ImGui_Key_LeftAlt    and r.ImGui_Key_LeftAlt()    or 642) or r.ImGui_IsKeyDown(ctx, r.ImGui_Key_RightAlt   and r.ImGui_Key_RightAlt()   or 646)
+    local bmod_shift = r.ImGui_IsKeyDown(ctx, r.ImGui_Key_LeftShift  and r.ImGui_Key_LeftShift()  or 640) or r.ImGui_IsKeyDown(ctx, r.ImGui_Key_RightShift and r.ImGui_Key_RightShift() or 644)
+    local bmod_ctrl  = r.ImGui_IsKeyDown(ctx, r.ImGui_Key_LeftCtrl   and r.ImGui_Key_LeftCtrl()   or 641) or r.ImGui_IsKeyDown(ctx, r.ImGui_Key_RightCtrl  and r.ImGui_Key_RightCtrl()  or 645)
+    local bus_sel_snap = {}
+    for _sb = 1, NUM_BUSES do bus_sel_snap[_sb] = bus_selected[_sb] or false end
+    for b = 1, NUM_BUSES do
+      local bus = buses[b]
+      -- ── Row A ──────────────────────────────────────────────────────────────
+      r.ImGui_TableNextRow(ctx)
+      r.ImGui_TableSetColumnIndex(ctx, 0)
+      if b > 1 then
+        local _, ly = r.ImGui_GetCursorScreenPos(ctx)
+        r.ImGui_DrawList_AddLine(bus_dl, bus_line_x0, ly-3, bus_line_x1, ly-3, 0x555555FF, 1)
+      end
+      local bmod_a = bmod_alt; local bmod_s = bmod_shift; local bmod_c = bmod_ctrl
+      local is_bsel = bus_selected[b] or false
+      r.ImGui_PushStyleColor(ctx, r.ImGui_Col_CheckMark(), is_bsel and 0x55BBFFFF or 0x666666FF)
+      local bbc, bbv = r.ImGui_Checkbox(ctx, tostring(b).."##bsel"..b, is_bsel)
+      r.ImGui_PopStyleColor(ctx)
+      if bbc then
+        if bmod_a then for bb=1,NUM_BUSES do bus_selected[bb]=false end; bus_selected[b]=true
+        elseif bmod_s and last_clicked_bus then
+          local lo=math.min(last_clicked_bus,b); local hi=math.max(last_clicked_bus,b)
+          for bb=lo,hi do bus_selected[bb]=true end
+        elseif bmod_c then
+          local dest=buses[b].routes_to or 0
+          for bb=1,NUM_BUSES do bus_selected[bb]=((buses[bb].routes_to or 0)==dest) end
+        else bus_selected[b]=bbv end
+        last_clicked_bus=b
+      end
+      -- Drag to reorder
+      if r.ImGui_BeginDragDropSource(ctx, r.ImGui_DragDropFlags_None and r.ImGui_DragDropFlags_None() or 0) then
+        r.ImGui_SetDragDropPayload(ctx,"BUS_MOVE",tostring(b))
+        r.ImGui_Text(ctx,"Move: "..bus.name)
+        r.ImGui_EndDragDropSource(ctx)
+      end
+      if r.ImGui_BeginDragDropTarget(ctx) then
+        local ok_p,pd = r.ImGui_AcceptDragDropPayload(ctx,"BUS_MOVE")
+        if ok_p then local src_b=tonumber(pd); if src_b and src_b~=b then bus_pend_move={src=src_b,dst=b} end end
+        r.ImGui_EndDragDropTarget(ctx)
+      end
+      -- Col 1: name + FX
+      r.ImGui_TableSetColumnIndex(ctx, 1)
+      do
+        local col1_w = r.ImGui_GetContentRegionAvail(ctx)
+        local half_w = math.floor(col1_w / 3) - 2
+        r.ImGui_SetNextItemWidth(ctx, half_w)
+        local bc, bv = r.ImGui_InputText(ctx, "##bname"..b.."_v"..group_load_version, rename_bus_buf[b], r.ImGui_InputTextFlags_AutoSelectAll())
+        if bc then push_undo_debounced(); rename_bus_buf[b]=bv; buses[b].name=bv end
+        r.ImGui_SameLine(ctx, 0, 4)
+        local bftmpl = buses[b].folder_template
+        local bftpreview = fx_preview(bftmpl) or "-- FX --"
+        local bftx_w = bftmpl and 26 or 0
+        r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Button(),        bftmpl and 0x1a3a1aFF or 0x2a2a2aFF)
+        r.ImGui_PushStyleColor(ctx, r.ImGui_Col_ButtonHovered(), bftmpl and 0x2a5a2aFF or 0x3a3a3aFF)
+        r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Text(),          bftmpl and 0xAAFFAAFF or 0x888888FF)
+        if r.ImGui_Button(ctx, bftpreview.."##bftbtn"..b, -1-bftx_w, 0) then
+          if not picker_combined_list then picker_build_combined() end
+          picker_state={target="bus",b=b}; picker_search_buf=""; picker_scroll_top=true; picker_focus_next=true
+        end
+        r.ImGui_PopStyleColor(ctx, 3)
+        if bftmpl then
+          r.ImGui_SameLine(ctx, 0, 4)
+          r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Button(),        0x5a1a1aFF)
+          r.ImGui_PushStyleColor(ctx, r.ImGui_Col_ButtonHovered(), 0x8a2a2aFF)
+          if r.ImGui_Button(ctx, "x##bftclr"..b, 22, 0) then
+            if dlg_ShowMessageBox("Clear bus FX?","Clear FX",4)==6 then push_undo(); buses[b].folder_template=nil end
+          end
+          r.ImGui_PopStyleColor(ctx, 2)
+        end
+      end
+      -- Col 2: delete
+      r.ImGui_TableSetColumnIndex(ctx, 2)
+      r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Button(),        0x5a1a1aFF)
+      r.ImGui_PushStyleColor(ctx, r.ImGui_Col_ButtonHovered(), 0x8a2a2aFF)
+      if r.ImGui_Button(ctx, "x##delbx"..b, 22, 0) then
+        if dlg_ShowMessageBox("Delete bus \"" .. bus.name .. "\"?","Delete Bus",4)==6 then
+          bus_pend_del=b
+        end
+      end
+      r.ImGui_PopStyleColor(ctx, 2)
+      -- Col 3: color swatch + R + A
+      r.ImGui_TableSetColumnIndex(ctx, 3)
+      do
+        local own_cp = buses[b].color_packed
+        local ic = to_imgui_color(own_cp, 255)
+        local cb_flags = r.ImGui_ColorEditFlags_NoTooltip() | r.ImGui_ColorEditFlags_NoBorder()
+        if r.ImGui_ColorButton(ctx, "##bcolor"..b, ic, cb_flags, 22, 20) then
+          local cmod_c = mouse_down_mod_ctrl; local cmod_s = mouse_down_mod_shift
+          local rv8,gv8,bv8 = unpack_color(own_cp)
+          local ok,nn = dlg_GR_SelectColor(r.GetMainHwnd(), r.ColorToNative(rv8,gv8,bv8))
+          if ok ~= 0 then
+            push_undo()
+            local nr,ng2,nb2 = r.ColorFromNative(nn)
+            local new_cp = pack_color(nr,ng2,nb2)
+            buses[b].color_packed = new_cp
+            if cmod_c then
+              for bb=1,NUM_BUSES do if bus_selected[bb] and bb~=b then buses[bb].color_packed=new_cp end end
+            elseif cmod_s then
+              -- Shift: apply to this bus subtree + routed groups+subgroups
+              local function bs2(b0) local r2={b0}; for bb2=1,NUM_BUSES do if (buses[bb2].routes_to or 0)==b0 then for _,v in ipairs(bs2(bb2)) do r2[#r2+1]=v end end end; return r2 end
+              local function gs2(g0) local r2={g0}; for gg=1,NUM_GROUPS do if (groups[gg].routes_to or 0)==g0 then for _,v in ipairs(gs2(gg)) do r2[#r2+1]=v end end end; return r2 end
+              for _,bb in ipairs(bs2(b)) do
+                buses[bb].color_packed=new_cp
+                for g=1,NUM_GROUPS do
+                  if (groups[g].routes_to or 0)==-bb then for _,gg in ipairs(gs2(g)) do groups[gg].color_packed=new_cp end end
+                end
+              end
+            end
+          end
+        end
+        r.ImGui_SameLine(ctx, 0, 4)
+        if r.ImGui_Button(ctx, "R##brdm"..b, 22, 20) then
+          pending_color_action = { g = b, action = "RB" }
+        end
+        r.ImGui_SameLine(ctx, 0, 4)
+        if r.ImGui_Button(ctx, "A##bbrt"..b, 22, 20) then
+          pending_color_action = { g = b, action = "AB" }
+        end
+      end
+      -- Col 4: routing dropdown
+      r.ImGui_TableSetColumnIndex(ctx, 4)
+      do
+        local brt = buses[b].routes_to or 0
+        local brtlbl = (brt==0) and "-> Master" or ("-> "..(buses[brt] and buses[brt].name or "Bus "..brt))
+        r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Button(),        brt~=0 and 0x3a1a1aFF or 0x222222FF)
+        r.ImGui_PushStyleColor(ctx, r.ImGui_Col_ButtonHovered(), brt~=0 and 0x6a2a2aFF or 0x333333FF)
+        r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Text(),          brt~=0 and 0xFF8888FF or 0x666666FF)
+        local _avail_brt = r.ImGui_GetContentRegionAvail(ctx); r.ImGui_SetNextItemWidth(ctx, _avail_brt)
+        if r.ImGui_BeginCombo(ctx, "##brta"..b, brtlbl) then
+          r.ImGui_PopStyleColor(ctx, 3)
+          local bim=(brt==0)
+          if r.ImGui_Selectable(ctx,"-> Master##brtm"..b,bim) and not bim then
+            push_undo()
+            if bmod_c then for bb=1,NUM_BUSES do if bus_sel_snap[bb] then buses[bb].routes_to=0 end end end
+            buses[b].routes_to=0
+          end
+          if bim then r.ImGui_SetItemDefaultFocus(ctx) end
+          r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Text(), 0xFF8888FF)
+          for b2=1,NUM_BUSES do
+            if b2 < b then  -- only busses above (lower index)
+              local bm2=(brt==b2)
+              if r.ImGui_Selectable(ctx,"-> "..(buses[b2] and buses[b2].name or "Bus "..b2).."##brtb"..b.."_"..b2,bm2) and not bm2 then
+                push_undo()
+                if bmod_c then for bb=1,NUM_BUSES do if bus_sel_snap[bb] and bb>b2 then buses[bb].routes_to=b2 end end end
+                buses[b].routes_to=b2
+              end
+              if bm2 then r.ImGui_SetItemDefaultFocus(ctx) end
+            end
+          end
+          r.ImGui_PopStyleColor(ctx)
+          r.ImGui_EndCombo(ctx)
+        else r.ImGui_PopStyleColor(ctx, 3) end
+      end
+      -- Col 5: pan
+      r.ImGui_TableSetColumnIndex(ctx, 5)
+      do
+        local bpan = buses[b].pan_str or "C"
+        if bpan == "" then bpan = "C" end
+        local bpan_valid = (bpan=="") or (parse_pan(bpan)~=nil)
+        local bchar_w=7; local bfield_w=18
+        local btext_w=#bpan*bchar_w
+        local bpad_x=math.max(1,math.floor((bfield_w-btext_w)/2)+6)
+        r.ImGui_SetNextItemWidth(ctx, -1)
+        r.ImGui_PushStyleVar(ctx, r.ImGui_StyleVar_FramePadding(), bpad_x, 3)
+        if not bpan_valid then r.ImGui_PushStyleColor(ctx, r.ImGui_Col_FrameBg(), 0x6e1a1aFF) end
+        local bpch, bpv = r.ImGui_InputText(ctx, "##bpan"..b, bpan, r.ImGui_InputTextFlags_AutoSelectAll())
+        if not bpan_valid then r.ImGui_PopStyleColor(ctx) end
+        r.ImGui_PopStyleVar(ctx)
+        if bpch then push_undo_debounced(); buses[b].pan_str=bpv end
+      end
+      -- ── Send rows (same as groups) ──────────────────────────────────────────
+      local bnum_sends = #buses[b].sends
+      for s = 1, MAX_SENDS do
+        bnum_sends = #buses[b].sends
+        local bslot_exists = (s <= bnum_sends)
+        local bsend_removed = false
+        r.ImGui_TableNextRow(ctx)
+        r.ImGui_TableSetColumnIndex(ctx, 0)
+        if bslot_exists then
+          local bcol_w=r.ImGui_GetContentRegionAvail(ctx); local blbl="S"..s
+          local btw=r.ImGui_CalcTextSize(ctx,blbl)
+          local _,bfp_ys=r.ImGui_GetStyleVar(ctx,r.ImGui_StyleVar_FramePadding())
+          r.ImGui_SetCursorPosX(ctx,r.ImGui_GetCursorPosX(ctx)+math.max(0,(bcol_w-btw)/2))
+          r.ImGui_SetCursorPosY(ctx,r.ImGui_GetCursorPosY(ctx)+bfp_ys)
+          r.ImGui_PushStyleColor(ctx,r.ImGui_Col_Text(),0xAAAAAAAA)
+          r.ImGui_Text(ctx,blbl)
+          r.ImGui_PopStyleColor(ctx,1)
+        elseif s==bnum_sends+1 and bnum_sends<MAX_SENDS then
+          r.ImGui_PushStyleColor(ctx,r.ImGui_Col_Button(),0x1a3a1aFF)
+          r.ImGui_PushStyleColor(ctx,r.ImGui_Col_ButtonHovered(),0x2a6a2aFF)
+          if r.ImGui_Button(ctx,"+##bsadd"..b.."_"..s,22,0) then
+            push_undo(); buses[b].sends[s]={name="",template=nil,color_packed=opt_send_color_packed,pre_fader=false}
+          end
+          r.ImGui_PopStyleColor(ctx,2)
+        end
+        r.ImGui_TableSetColumnIndex(ctx, 1)
+        if bslot_exists then
+          local bcw=r.ImGui_GetContentRegionAvail(ctx); local bhw=math.floor(bcw/3)-2
+          r.ImGui_SetNextItemWidth(ctx,bhw)
+          local bsn=buses[b].sends[s].name or ""
+          local bsnch,bsnv=r.ImGui_InputText(ctx,"##bsname"..b.."_"..s,bsn,r.ImGui_InputTextFlags_AutoSelectAll())
+          if bsnch then push_undo_debounced(); buses[b].sends[s].name=bsnv end
+          r.ImGui_SameLine(ctx,0,4)
+          local bst=buses[b].sends[s].template; local bsp2=fx_preview(bst) or "-- FX --"
+          local bstx_w=bst and 26 or 0
+          r.ImGui_PushStyleColor(ctx,r.ImGui_Col_Button(),        bst and 0x1a3a1aFF or 0x2a2a2aFF)
+          r.ImGui_PushStyleColor(ctx,r.ImGui_Col_ButtonHovered(), bst and 0x2a5a2aFF or 0x3a3a3aFF)
+          r.ImGui_PushStyleColor(ctx,r.ImGui_Col_Text(),          bst and 0xAAFFAAFF or 0x888888FF)
+          if r.ImGui_Button(ctx,bsp2.."##bsfx"..b.."_"..s,-1-bstx_w,0) then
+            if not picker_combined_list then picker_build_combined() end
+            picker_state={target="bsend",b=b,s=s}; picker_search_buf=""; picker_scroll_top=true; picker_focus_next=true
+          end
+          r.ImGui_PopStyleColor(ctx,3)
+          if bst then
+            r.ImGui_SameLine(ctx,0,4)
+            r.ImGui_PushStyleColor(ctx,r.ImGui_Col_Button(),0x5a1a1aFF)
+            r.ImGui_PushStyleColor(ctx,r.ImGui_Col_ButtonHovered(),0x8a2a2aFF)
+            if r.ImGui_Button(ctx,"x##bsftclr"..b.."_"..s,22,0) then
+              if dlg_ShowMessageBox("Clear send FX?","Clear FX",4)==6 then push_undo();buses[b].sends[s].template=nil end
+            end
+            r.ImGui_PopStyleColor(ctx,2)
+          end
+          r.ImGui_TableSetColumnIndex(ctx, 2)
+          r.ImGui_PushStyleColor(ctx,r.ImGui_Col_Button(),0x5a1a1aFF)
+          r.ImGui_PushStyleColor(ctx,r.ImGui_Col_ButtonHovered(),0x8a2a2aFF)
+          if r.ImGui_Button(ctx,"x##bsstc"..b.."_"..s,22,0) then
+            if dlg_ShowMessageBox("Remove this send slot?","Remove Send",4)==6 then
+              push_undo(); table.remove(buses[b].sends,s); bsend_removed=true
+            end
+          end
+          r.ImGui_PopStyleColor(ctx,2)
+          r.ImGui_TableSetColumnIndex(ctx, 3)
+          if not bsend_removed then
+            local bscp=buses[b].sends[s].color_packed or opt_send_color_packed
+            if r.ImGui_ColorButton(ctx,"##bsclr"..b.."_"..s,to_imgui_color(bscp,255),r.ImGui_ColorEditFlags_NoTooltip()|r.ImGui_ColorEditFlags_NoBorder(),22,20) then
+              local bsr2,bsg2,bsb2=unpack_color(bscp)
+              local ok2,nc2=dlg_GR_SelectColor(r.GetMainHwnd(),r.ColorToNative(bsr2,bsg2,bsb2))
+              if ok2~=0 then local nr2,ng3,nb3=r.ColorFromNative(nc2); push_undo(); buses[b].sends[s].color_packed=pack_color(nr2,ng3,nb3) end
+            end
+            r.ImGui_SameLine(ctx,0,4)
+            if r.ImGui_Button(ctx,"R##bsrdm"..b.."_"..s,22,20) then push_undo();buses[b].sends[s].color_packed=random_color() end
+            r.ImGui_SameLine(ctx,0,4)
+            if r.ImGui_Button(ctx,"A##bsbrt"..b.."_"..s,22,20) then push_undo();buses[b].sends[s].color_packed=cycle_brightness(buses[b].sends[s].color_packed or opt_send_color_packed) end
+          end
+        end
+        if bslot_exists then
+          r.ImGui_TableSetColumnIndex(ctx, 4)
+          if not bsend_removed then
+            local btn_w=22
+            do local avail_bw=r.ImGui_GetContentRegionAvail(ctx)
+              r.ImGui_SetCursorPosX(ctx,r.ImGui_GetCursorPosX(ctx)+math.max(0,math.floor((avail_bw-btn_w*4-12)/2)))
+            end
+            r.ImGui_PushStyleColor(ctx,r.ImGui_Col_Button(),0x2a3a2aFF)
+            r.ImGui_PushStyleColor(ctx,r.ImGui_Col_ButtonHovered(),0x3a5a3aFF)
+            if r.ImGui_Button(ctx,"S##bsvs"..b.."_"..s,btn_w,0) then end
+            r.ImGui_PopStyleColor(ctx,2)
+            r.ImGui_SameLine(ctx,0,4)
+            r.ImGui_PushStyleColor(ctx,r.ImGui_Col_Button(),0x1a3a1aFF)
+            r.ImGui_PushStyleColor(ctx,r.ImGui_Col_ButtonHovered(),0x2a5a2aFF)
+            if r.ImGui_Button(ctx,"0##bsv0"..b.."_"..s,btn_w,0) then end
+            r.ImGui_PopStyleColor(ctx,2)
+            r.ImGui_SameLine(ctx,0,4)
+            r.ImGui_PushStyleColor(ctx,r.ImGui_Col_Button(),0x1a1a3aFF)
+            r.ImGui_PushStyleColor(ctx,r.ImGui_Col_ButtonHovered(),0x2a2a5aFF)
+            if r.ImGui_Button(ctx,"inf##bsvi"..b.."_"..s,btn_w,0) then end
+            r.ImGui_PopStyleColor(ctx,2)
+            r.ImGui_SameLine(ctx,0,4)
+            r.ImGui_PushStyleColor(ctx,r.ImGui_Col_Button(),0x5a1a1aFF)
+            r.ImGui_PushStyleColor(ctx,r.ImGui_Col_ButtonHovered(),0x8a2a2aFF)
+            if r.ImGui_Button(ctx,"clr##bsvx"..b.."_"..s,btn_w,0) then end
+            r.ImGui_PopStyleColor(ctx,2)
+          end
+        end
+        if bslot_exists and not bsend_removed then
+          r.ImGui_TableSetColumnIndex(ctx, 5)
+          local bpre=buses[b].sends[s].pre_fader or false
+          local bcw5=r.ImGui_GetContentRegionAvail(ctx)
+          r.ImGui_SetCursorPosX(ctx,r.ImGui_GetCursorPosX(ctx)+math.max(0,math.floor((bcw5-19)/2)))
+          r.ImGui_PushStyleColor(ctx,r.ImGui_Col_Text(),bpre and 0xFFDDAAFF or 0x666666FF)
+          local bpfc,bpfv=r.ImGui_Checkbox(ctx,"##bspre"..b.."_"..s,bpre)
+          r.ImGui_PopStyleColor(ctx)
+          if bpfc then push_undo();buses[b].sends[s].pre_fader=bpfv end
+        end
+        if not bslot_exists then break end
+      end  -- for s
+    end  -- for b
+    r.ImGui_EndTable(ctx)
+  end
+  -- ── Bus buttons row ───────────────────────────────────────────────────────
+  do
+    local btn_b = math.floor((groups_w - 12) / 4)
+    if NUM_BUSES < MAX_GROUPS then
+      if r.ImGui_Button(ctx, "Add Bus##ab", btn_b, 0) then
+        push_undo(); NUM_BUSES=NUM_BUSES+1
+        buses[NUM_BUSES]={name="Bus "..NUM_BUSES,color_packed=random_color(),sends={},pan_str="C",folder_template=nil,routes_to=0}
+        rename_bus_buf[NUM_BUSES]="Bus "..NUM_BUSES
+      end
+    else r.ImGui_Dummy(ctx,btn_b,0) end
+    r.ImGui_SameLine(ctx,0,4)
+    if NUM_BUSES < MAX_GROUPS then
+      if r.ImGui_Button(ctx, "Add Busses##abs", btn_b, 0) then
+        local ok2,val2=dlg_GetUserInputs("Add Multiple Busses",1,"How many busses to add:","")
+        if ok2 then local n2=math.floor(tonumber(val2) or 0)
+          if n2>=1 then push_undo()
+            for _i2=1,math.min(n2,MAX_GROUPS-NUM_BUSES) do
+              NUM_BUSES=NUM_BUSES+1
+              buses[NUM_BUSES]={name="Bus "..NUM_BUSES,color_packed=random_color(),sends={},pan_str="C",folder_template=nil,routes_to=0}
+              rename_bus_buf[NUM_BUSES]="Bus "..NUM_BUSES
+            end
+          end
+        end
+      end
+    else r.ImGui_Dummy(ctx,btn_b,0) end
+    r.ImGui_SameLine(ctx,0,4)
+    r.ImGui_PushStyleColor(ctx,r.ImGui_Col_Button(),0x5a1a1aFF)
+    r.ImGui_PushStyleColor(ctx,r.ImGui_Col_ButtonHovered(),0x8a2a2aFF)
+    if r.ImGui_Button(ctx,"Reset Busses##rsb",btn_b,0) then
+      if dlg_ShowMessageBox("Reset all busses to default?","Reset Busses",4)==6 then
+        push_undo(); init_buses()
+      end
+    end
+    r.ImGui_SameLine(ctx,0,4)
+    if r.ImGui_Button(ctx,"Reset Sends##rbss",btn_b,0) then
+      if dlg_ShowMessageBox("Clear all send slots from all busses?","Reset Sends",4)==6 then
+        push_undo(); for b2=1,NUM_BUSES do buses[b2].sends={} end
+      end
+    end
+    r.ImGui_PopStyleColor(ctx,2)
+  end
+  -- Post-loop: handle pending bus send delete
+  if bus_pend_send_del then
+    push_undo(); table.remove(buses[bus_pend_send_del.b].sends, bus_pend_send_del.s)
+  end
+  -- Post-loop: handle pending bus delete/move
+  if bus_pend_del then
+    push_undo()
+    table.remove(buses,bus_pend_del); table.remove(rename_bus_buf,bus_pend_del); NUM_BUSES=NUM_BUSES-1
+    for g=1,NUM_GROUPS do
+      local rt=groups[g].routes_to or 0
+      if rt<0 then local bi=-rt
+        if bi==bus_pend_del then groups[g].routes_to=0
+        elseif bi>bus_pend_del then groups[g].routes_to=-(bi-1) end
+      end
+    end
+    for b=1,NUM_BUSES do
+      local rt=buses[b].routes_to or 0
+      if rt>=bus_pend_del then buses[b].routes_to=0 end
+    end
+  end
+  if bus_pend_move then
+    push_undo()
+    local bsrc,bdst=bus_pend_move.src,bus_pend_move.dst
+    local old_order={}
+    for bi=1,NUM_BUSES do old_order[bi]=bi end
+    table.remove(old_order,bsrc); table.insert(old_order,bdst,bsrc)
+    local new_idx={}
+    for new,old in ipairs(old_order) do new_idx[old]=new end
+    local btmp=buses[bsrc]; table.remove(buses,bsrc); table.insert(buses,bdst,btmp)
+    local rbtmp=rename_bus_buf[bsrc]; table.remove(rename_bus_buf,bsrc); table.insert(rename_bus_buf,bdst,rbtmp)
+    for bi=1,NUM_BUSES do local brt=buses[bi].routes_to or 0; if brt~=0 then buses[bi].routes_to=new_idx[brt] or 0 end end
+    for g=1,NUM_GROUPS do local rt=groups[g].routes_to or 0; if rt<0 then groups[g].routes_to=-(new_idx[-rt] or 0) end end
+  end
+  r.ImGui_Separator(ctx)
+
   -- ── Panel header: "Groups" label row ──────────────────────────────────────
   if r.ImGui_BeginTable(ctx, "lhdr", 1, r.ImGui_TableFlags_BordersOuter(), groups_w, 0) then
-    r.ImGui_TableSetupColumn(ctx, "Groups", r.ImGui_TableColumnFlags_WidthStretch())
-    r.ImGui_TableHeadersRow(ctx)
+    r.ImGui_TableSetupColumn(ctx, "##groupshdr", r.ImGui_TableColumnFlags_WidthStretch())
+    r.ImGui_TableNextRow(ctx, r.ImGui_TableRowFlags_Headers())
+    r.ImGui_TableSetColumnIndex(ctx, 0)
+    r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Text(), 0x66FF66FF)
+    r.ImGui_TableHeader(ctx, "Groups")
+    r.ImGui_PopStyleColor(ctx)
     r.ImGui_EndTable(ctx)
   end
 
@@ -2821,10 +3474,16 @@ local function draw_gui()
       r.ImGui_TableSetColumnIndex(ctx, 4)
       do
         local rt = groups[g].routes_to or 0
-        local rt_full = (rt == 0) and "-> Master" or ("-> " .. groups[rt].name)
-        r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Button(),        rt ~= 0 and 0x1a2a3aFF or 0x222222FF)
-        r.ImGui_PushStyleColor(ctx, r.ImGui_Col_ButtonHovered(), rt ~= 0 and 0x2a4a6aFF or 0x333333FF)
-        r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Text(),          rt ~= 0 and 0xAADDFFFF or 0x666666FF)
+        local rt_full
+        if rt == 0 then rt_full = "-> Master"
+        elseif rt < 0 then rt_full = "-> "..(buses[-rt] and buses[-rt].name or "Bus "..(-rt))
+        else rt_full = "-> "..(groups[rt] and groups[rt].name or "Group "..rt) end
+        local rt_btn=rt==0 and 0x222222FF or (rt<0 and 0x3a1a1aFF or 0x1a3a1aFF)
+        local rt_hov=rt==0 and 0x333333FF or (rt<0 and 0x6a2a2aFF or 0x2a6a2aFF)
+        local rt_txt=rt==0 and 0x666666FF or (rt<0 and 0xFF8888FF or 0x88FF88FF)
+        r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Button(),        rt_btn)
+        r.ImGui_PushStyleColor(ctx, r.ImGui_Col_ButtonHovered(), rt_hov)
+        r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Text(),          rt_txt)
         local _avail_rt = r.ImGui_GetContentRegionAvail(ctx); r.ImGui_SetNextItemWidth(ctx, _avail_rt)
         if r.ImGui_BeginCombo(ctx, "##rta"..g, rt_full) then
           r.ImGui_PopStyleColor(ctx, 3)
@@ -2836,6 +3495,18 @@ local function draw_gui()
             end
             groups[g].routes_to = 0
           end
+          r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Text(), 0xFF8888FF)
+          for b2 = 1, NUM_BUSES do
+            local is_bus_rt = (rt == -b2)
+            if r.ImGui_Selectable(ctx, "-> "..(buses[b2] and buses[b2].name or "Bus "..b2).."##rtab"..g.."_"..b2, is_bus_rt) and not is_bus_rt then
+              push_undo()
+              if mod_ctrl then for gg=1,NUM_GROUPS do if grp_sel_snap[gg] then groups[gg].routes_to=-b2 end end end
+              groups[g].routes_to = -b2
+            end
+            if is_bus_rt then r.ImGui_SetItemDefaultFocus(ctx) end
+          end
+          r.ImGui_PopStyleColor(ctx)
+          r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Text(), 0x88FF88FF)
           for g2 = 1, NUM_GROUPS do
             if g2 ~= g and not would_create_routing_cycle(g, g2) then
               local is_rt_match = (rt == g2)
@@ -2853,6 +3524,7 @@ local function draw_gui()
               if is_rt_match then r.ImGui_SetItemDefaultFocus(ctx) end
             end
           end
+          r.ImGui_PopStyleColor(ctx)
           r.ImGui_EndCombo(ctx)
         else
           r.ImGui_PopStyleColor(ctx, 3)
@@ -3261,6 +3933,7 @@ local function draw_gui()
       if dlg_ShowMessageBox("Reset all groups to default?", "Reset Groups", 4) == 6 then
         push_undo()
         init_groups()
+  init_buses()
         group_load_version = group_load_version + 1
         for _, t in ipairs(tracks) do t.group = NO_GROUP end
       end
@@ -3681,15 +4354,39 @@ local function draw_gui()
       r.ImGui_SameLine(ctx, 0, 8)
       local tl_ch2, tl_v2 = r.ImGui_Checkbox(ctx, "Sends##tls", opt_trim_sends)
       if tl_ch2 then push_undo(); opt_trim_sends = tl_v2 end
+      r.ImGui_SameLine(ctx, 0, 8)
+      local tl_ch3, tl_v3 = r.ImGui_Checkbox(ctx, "Busses##tlb", opt_trim_buses)
+      if tl_ch3 then push_undo(); opt_trim_buses = tl_v3 end
     end
 
-    -- ── Parent Color ────────────────────────────────────────────────────────
+    -- ── Spacers ─────────────────────────────────────────────────────────────
+    r.ImGui_TableNextRow(ctx)
+    r.ImGui_TableSetColumnIndex(ctx, 0)
+    do local _,fpy=r.ImGui_GetStyleVar(ctx,r.ImGui_StyleVar_FramePadding())
+      r.ImGui_SetCursorPosY(ctx,r.ImGui_GetCursorPosY(ctx)+fpy)
+      r.ImGui_PushStyleColor(ctx,r.ImGui_Col_Text(),0xAAAAAAAA)
+      r.ImGui_Text(ctx,"Spacers")
+      r.ImGui_PopStyleColor(ctx)
+    end
+    r.ImGui_TableSetColumnIndex(ctx, 1)
+    do
+      local sc1,sv1=r.ImGui_Checkbox(ctx,"All Groups##spall",opt_spacer_all)
+      if sc1 then push_undo();opt_spacer_all=sv1 end
+      r.ImGui_SameLine(ctx,0,8)
+      local sc2,sv2=r.ImGui_Checkbox(ctx,"-> Bus##spbus",opt_spacer_bus)
+      if sc2 then push_undo();opt_spacer_bus=sv2 end
+      r.ImGui_SameLine(ctx,0,8)
+      local sc3,sv3=r.ImGui_Checkbox(ctx,"-> Master##spmst",opt_spacer_master)
+      if sc3 then push_undo();opt_spacer_master=sv3 end
+    end
+
+    -- ── Group Colors ────────────────────────────────────────────────────────
     r.ImGui_TableNextRow(ctx)
     r.ImGui_TableSetColumnIndex(ctx, 0)
     do local _, fpy5 = r.ImGui_GetStyleVar(ctx, r.ImGui_StyleVar_FramePadding())
       r.ImGui_SetCursorPosY(ctx, r.ImGui_GetCursorPosY(ctx) + fpy5)
       r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Text(), 0xAAAAAAAA)
-      r.ImGui_Text(ctx, "Parent Color")
+      r.ImGui_Text(ctx, "Group Colors")
       r.ImGui_PopStyleColor(ctx)
     end
     r.ImGui_TableSetColumnIndex(ctx, 1)
@@ -3714,8 +4411,43 @@ local function draw_gui()
         parent_color_packed = random_color()
       end
       r.ImGui_SameLine(ctx, 0, 8)
-      local putc_c, putc_v = r.ImGui_Checkbox(ctx, "Use Track Color##putc", parent_use_track_color)
+      local putc_c, putc_v = r.ImGui_Checkbox(ctx, "Use Panel Color##putc", parent_use_track_color)
       if putc_c then push_undo(); parent_use_track_color = putc_v end
+    end
+
+    -- ── Bus Color ───────────────────────────────────────────────────────────
+    r.ImGui_TableNextRow(ctx)
+    r.ImGui_TableSetColumnIndex(ctx, 0)
+    do local _, fpy_bc = r.ImGui_GetStyleVar(ctx, r.ImGui_StyleVar_FramePadding())
+      r.ImGui_SetCursorPosY(ctx, r.ImGui_GetCursorPosY(ctx) + fpy_bc)
+      r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Text(), 0xAAAAAAAA)
+      r.ImGui_Text(ctx, "Bus Color")
+      r.ImGui_PopStyleColor(ctx)
+    end
+    r.ImGui_TableSetColumnIndex(ctx, 1)
+    do
+      local bc_ic = bus_use_panel_color and 0x555555FF or to_imgui_color(bus_color_packed, 255)
+      local bc_flags = r.ImGui_ColorEditFlags_NoTooltip() | r.ImGui_ColorEditFlags_NoBorder()
+      if bus_use_panel_color then
+        r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Button(), 0x555555FF)
+        r.ImGui_PushStyleColor(ctx, r.ImGui_Col_ButtonHovered(), 0x555555FF)
+        r.ImGui_PushStyleColor(ctx, r.ImGui_Col_ButtonActive(), 0x555555FF)
+      end
+      if r.ImGui_ColorButton(ctx, "##bccolor", bc_ic, bc_flags, 22, 20) and not bus_use_panel_color then
+        local brv, bgv, bbv = unpack_color(bus_color_packed)
+        local bok, bnn = dlg_GR_SelectColor(r.GetMainHwnd(), r.ColorToNative(brv, bgv, bbv))
+        if bok ~= 0 then push_undo()
+          local bnr, bng, bnb = r.ColorFromNative(bnn); bus_color_packed = pack_color(bnr, bng, bnb)
+        end
+      end
+      if bus_use_panel_color then r.ImGui_PopStyleColor(ctx, 3) end
+      r.ImGui_SameLine(ctx, 0, 4)
+      if r.ImGui_Button(ctx, "R##bcrdm", 22, 20) then push_undo()
+        bus_color_packed = random_color()
+      end
+      r.ImGui_SameLine(ctx, 0, 8)
+      local bupc_c, bupc_v = r.ImGui_Checkbox(ctx, "Use Panel Color##bupc", bus_use_panel_color)
+      if bupc_c then push_undo(); bus_use_panel_color = bupc_v end
     end
 
     -- ── Send Color ──────────────────────────────────────────────────────────
@@ -3855,6 +4587,14 @@ local function draw_gui()
             slot.opt_sends_folder_bot   = opt_sends_folder_bot
             slot.opt_trim_groups        = opt_trim_groups
             slot.opt_trim_sends         = opt_trim_sends
+            slot.opt_spacer_all         = opt_spacer_all
+            slot.opt_spacer_bus         = opt_spacer_bus
+            slot.opt_spacer_master      = opt_spacer_master
+            slot.buses = {}; for b2=1,NUM_BUSES do
+              local bx=buses[b2]; local bsx={}
+              for s,sl in ipairs(bx.sends or {}) do bsx[s]={name=sl.name,template=sl.template,color_packed=sl.color_packed,pre_fader=sl.pre_fader} end
+              slot.buses[b2]={name=bx.name,color_packed=bx.color_packed,folder_template=bx.folder_template,routes_to=bx.routes_to or 0,pan_str=bx.pan_str or "C",sends=bsx}
+            end
             slot.opt_send_color_packed  = opt_send_color_packed
             slot.opt_send_use_trk_color = opt_send_use_trk_color
             slot.opt_fx_bypass_inserts  = opt_fx_bypass_inserts
@@ -3933,6 +4673,17 @@ local function draw_gui()
         if slot.opt_sends_folder_bot   ~= nil then opt_sends_folder_bot   = slot.opt_sends_folder_bot   end
         if slot.opt_trim_groups        ~= nil then opt_trim_groups        = slot.opt_trim_groups        end
         if slot.opt_trim_sends         ~= nil then opt_trim_sends         = slot.opt_trim_sends         end
+        if slot.opt_spacer_all         ~= nil then opt_spacer_all         = slot.opt_spacer_all         end
+        if slot.opt_spacer_bus         ~= nil then opt_spacer_bus         = slot.opt_spacer_bus         end
+        if slot.opt_spacer_master      ~= nil then opt_spacer_master      = slot.opt_spacer_master      end
+        if slot.buses then
+          buses={}; rename_bus_buf={}; NUM_BUSES=#slot.buses
+          for b2=1,NUM_BUSES do local sb2=slot.buses[b2]; local bsx2={}
+            for s,sl in ipairs(sb2.sends or {}) do bsx2[s]={name=sl.name or "",template=sl.template,color_packed=sl.color_packed or opt_send_color_packed,pre_fader=sl.pre_fader or false} end
+            buses[b2]={name=sb2.name,color_packed=sb2.color_packed,folder_template=sb2.folder_template,routes_to=sb2.routes_to or 0,pan_str=sb2.pan_str or "C",sends=bsx2}
+            rename_bus_buf[b2]=sb2.name
+          end
+        end
         if slot.opt_send_color_packed  ~= nil then opt_send_color_packed  = slot.opt_send_color_packed  end
         if slot.opt_send_use_trk_color ~= nil then opt_send_use_trk_color = slot.opt_send_use_trk_color end
         if slot.opt_fx_bypass_inserts  ~= nil then opt_fx_bypass_inserts  = slot.opt_fx_bypass_inserts  end
@@ -5177,6 +5928,7 @@ local function init()
   r.ImGui_SetNextWindowSize(ctx, WIN_W, WIN_H, r.ImGui_Cond_FirstUseEver())
   refresh_tracks()
   init_groups()
+  init_buses()
   load_presets()
 end
 
