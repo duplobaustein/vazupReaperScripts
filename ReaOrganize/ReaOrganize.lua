@@ -1,11 +1,24 @@
 -- @description ReaOrganize
 -- @author vazupReaperScripts
--- @version 2.25
+-- @version 2.34
+-- @changelog
+--   * Track Panel overhaul
+--   * Drag & drop moves tracks in the track panel
+--   * Ctrl+drag moves all selected tracks
+--   * Post-drop popup shows the direct ancestor chain for hierarchy assignment
+--   * Popup applies to all moved tracks at once
+--   * Refresh overhaul and safety prompt
+--   * Various bug fixes along the way
+--   * Option Panel overhaul
+--   * New Group and Global Send options
+--   * Group structure visible in Track Panel
+--   * Group routing in Track Panel
+--   * Fixed track assignment bug when moving groups
 -- @repository https://github.com/duplobaustein/vazupReaperScripts
 -- @links
 --   GitHub https://github.com/duplobaustein/vazupReaperScripts
 -- @about
---   # ReaOrganize v2.25
+--   # ReaOrganize v2.34
 --   ReaOrganize is a session organizer for REAPER. It lets you design your session's structure, defining groups, track send routing, FX chains, panning and colors — and then executes everything in one click via the RUN button. The core idea is that ReaOrganize works as a blueprint layer on top of your REAPER session. You define how your session should be structured in the script, and RUN builds it.
 --
 --   Basic Workflow
@@ -21,6 +34,15 @@
 --   Lookup the provided manual pdf.
 --
 --   ## Changelog
+--   ### v2.34
+--   * Track Panel overhaul
+--   * Drag & drop moves tracks in the track panel
+--   * Ctrl+drag moves all selected tracks
+--   * Post-drop popup shows the direct ancestor chain for hierarchy assignment
+--   * Popup applies to all moved tracks at once
+--   * Refresh overhaul and safety prompt
+--   * Various bug fixes along the way
+--
 --   ### v2.25
 --   * Option Panel overhaul
 --   * New Group and Global Send options
@@ -43,7 +65,7 @@ if not r.ImGui_CreateContext then
 end
 
 -- ── Version ───────────────────────────────────────────────────────────────────
-local VERSION = "v2.25"
+local VERSION = "v2.34"
 
 -- ── Constants ─────────────────────────────────────────────────────────────────
 local MAX_GROUPS   = 100
@@ -330,8 +352,10 @@ local function make_snapshot()
 end
 
 local display_rows       = {}   -- rebuilt when group assignments change
-local display_rows_dirty = true -- force rebuild on first draw
-local grp_sends_route_w  = 90   -- shared route dropdown width (set by Grp Sends Pos row)
+local display_rows_dirty    = true -- force rebuild on first draw
+local grp_sends_route_w     = 90   -- shared route dropdown width (set by Grp Sends Pos row)
+local pending_depth_adjust  = nil  -- {row_i, idx} set after a drop to offer depth nudge
+local drag_ctrl_held        = false -- true if Ctrl was held when drag started
 
 local function restore_snapshot(snap)
   NUM_GROUPS = snap.NUM_GROUPS
@@ -444,6 +468,7 @@ local function do_undo()
   redo_stack[#redo_stack + 1] = make_snapshot()
   restore_snapshot(table.remove(undo_stack))
   display_rows_dirty = true
+  pending_depth_adjust = nil
 end
 
 local function do_redo()
@@ -1110,7 +1135,15 @@ local function run()
   r.Undo_BeginBlock()
   r.PreventUIRefresh(1)
 
-  -- ── process_group: roots-first DFS ────────────────────────────────────────────
+  -- ── process_group: roots-first DFS ───────────────────────────────────────────
+  -- Build display_rows position map for ordering tracks per panel order
+  local dr_pos_map = {}
+  for ri, row in ipairs(display_rows) do
+    if row.type == "track" and row.idx then
+      local t2 = tracks[row.idx]
+      if t2 and t2.guid then dr_pos_map[t2.guid] = ri end
+    end
+  end
   -- Groups are placed in panel order by moving tracks to next_group_pos,
   -- which advances after each group is placed. No pre-sort needed.
   local next_group_pos = nil  -- set before first call; advances after each root group
@@ -1137,17 +1170,23 @@ local function run()
 
     local function ordered_guids(gg)
       local out   = {}
-      -- items: each entry is either {kind="mem", guid, pos} or {kind="child", cg, pos}
       local items = {}
       for _, m in ipairs(group_members[gg]) do
         if m.guid then
-          local p = track_index(m.guid)
-          items[#items+1] = { kind = "mem", guid = m.guid, pos = p or math.huge }
+          local p = dr_pos_map[m.guid] or track_index(m.guid) or math.huge
+          items[#items+1] = { kind = "mem", guid = m.guid, pos = p }
         end
       end
       for _, cg in ipairs(group_children_map[gg]) do
         if has_any_active(cg) then
-          items[#items+1] = { kind = "child", cg = cg, pos = subtree_min_pos(cg) }
+          local min_p = math.huge
+          for _, m2 in ipairs(group_members[cg]) do
+            if m2.guid then
+              local p = dr_pos_map[m2.guid] or math.huge
+              if p < min_p then min_p = p end
+            end
+          end
+          items[#items+1] = { kind = "child", cg = cg, pos = min_p }
         end
       end
       table.sort(items, function(a, b) return a.pos < b.pos end)
@@ -2765,6 +2804,130 @@ local function build_display_rows()
       display_rows[#display_rows+1] = { type="track", idx=i, depth=0 }
     end
   end
+end
+
+-- Derive t.group for all tracks from display_rows (display_rows is primary)
+local function sync_groups_from_display()
+  for ri, row in ipairs(display_rows) do
+    if row.type == "track" and tracks[row.idx] then
+      -- Find nearest preceding group header at depth == row.depth - 1
+      local target_grp = NO_GROUP
+      if row.depth > 0 then
+        for ri2 = ri - 1, 1, -1 do
+          local r2 = display_rows[ri2]
+          if r2 and r2.type == "group" and r2.depth == row.depth - 1 then
+            target_grp = r2.g
+            break
+          end
+        end
+      end
+      tracks[row.idx].group = target_grp
+    end
+  end
+end
+
+-- Find which group a display row index is "under" (nearest preceding group header)
+local function group_of_display_pos(pos)
+  for i = pos - 1, 1, -1 do
+    if display_rows[i] and display_rows[i].type == "group" then
+      return display_rows[i].g, display_rows[i].depth
+    end
+  end
+  return NO_GROUP, 0
+end
+
+-- Find last row index belonging to group g (including its subgroup subtree)
+local function last_row_of_group(g)
+  local last = nil
+  local in_group = false
+  for i, row in ipairs(display_rows) do
+    if row.type == "group" and row.g == g then
+      in_group = true
+      last = i
+    elseif in_group then
+      if row.depth > display_rows[last].depth or
+         (row.type == "group" and (groups[row.g].routes_to or 0) == g) then
+        last = i
+      else
+        break
+      end
+    end
+  end
+  return last
+end
+
+-- Move a track row to under a target group (or to unassigned if g == NO_GROUP)
+local function assign_track_to_group(track_idx, g)
+  -- Find and remove the track from display_rows
+  local removed_row = nil
+  for i = #display_rows, 1, -1 do
+    local row = display_rows[i]
+    if row.type == "track" and row.idx == track_idx then
+      removed_row = table.remove(display_rows, i)
+      break
+    end
+  end
+  if not removed_row then
+    removed_row = { type = "track", idx = track_idx, depth = 0 }
+  end
+  if g == NO_GROUP then
+    -- Append to unassigned (bottom)
+    removed_row.depth = 0
+    display_rows[#display_rows+1] = removed_row
+  else
+    -- Insert after the last row of the target group
+    local insert_after = last_row_of_group(g)
+    if insert_after then
+      local grp_depth = display_rows[insert_after] and display_rows[insert_after].depth or 0
+      -- Find the group header depth
+      for _, row in ipairs(display_rows) do
+        if row.type == "group" and row.g == g then
+          grp_depth = row.depth
+          break
+        end
+      end
+      removed_row.depth = grp_depth + 1
+      table.insert(display_rows, insert_after + 1, removed_row)
+    else
+      -- Group not yet in display_rows, add group header + track
+      local grp_depth = 0
+      local parent_g = groups[g].routes_to or 0
+      if parent_g ~= 0 and parent_g <= NUM_GROUPS then
+        -- find parent depth
+        for _, row in ipairs(display_rows) do
+          if row.type == "group" and row.g == parent_g then
+            grp_depth = row.depth + 1
+            break
+          end
+        end
+        local parent_last = last_row_of_group(parent_g)
+        if parent_last then
+          table.insert(display_rows, parent_last + 1, { type="group", g=g, depth=grp_depth })
+          table.insert(display_rows, parent_last + 2, { type="track", idx=track_idx, depth=grp_depth+1 })
+        else
+          display_rows[#display_rows+1] = { type="group", g=g, depth=0 }
+          display_rows[#display_rows+1] = { type="track", idx=track_idx, depth=1 }
+        end
+      else
+        -- root group, insert before unassigned tracks
+        local insert_pos = #display_rows + 1
+        for i, row in ipairs(display_rows) do
+          if row.type == "track" and row.depth == 0 then
+            insert_pos = i
+            break
+          end
+        end
+        table.insert(display_rows, insert_pos,     { type="group", g=g, depth=0 })
+        table.insert(display_rows, insert_pos + 1, { type="track", idx=track_idx, depth=1 })
+        removed_row = nil  -- already inserted above
+      end
+      if removed_row then
+        -- shouldn't reach here, but safety
+        display_rows[#display_rows+1] = removed_row
+      end
+    end
+  end
+  sync_groups_from_display()
 end
 
 local function build_active_send_cols()
@@ -5940,6 +6103,75 @@ local function draw_track_panel(ctx, active_sc, num_gs, avail_h, btn_row_h)
           r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Text(), bright > 140 and 0x000000FF or 0xFFFFFFFF)
           r.ImGui_Button(ctx, tostring(t.reaper_idx + 1) .. "##num" .. i, col0_base, 0)
           r.ImGui_PopStyleColor(ctx, 4)
+          -- Drag source: track row (Ctrl+drag = move all selected tracks)
+          if r.ImGui_BeginDragDropSource(ctx, r.ImGui_DragDropFlags_SourceAllowNullID()) then
+            local ctrl = r.ImGui_IsKeyDown(ctx, r.ImGui_Key_LeftCtrl  and r.ImGui_Key_LeftCtrl()  or 641) or
+                         r.ImGui_IsKeyDown(ctx, r.ImGui_Key_RightCtrl and r.ImGui_Key_RightCtrl() or 645)
+            drag_ctrl_held = ctrl
+            if ctrl and t.selected then
+              -- Multi: encode all selected row indices as "MULTI:i1,i2,..."
+              local sel_rows = {}
+              for ri3, row3 in ipairs(display_rows) do
+                if row3.type == "track" and tracks[row3.idx] and tracks[row3.idx].selected then
+                  sel_rows[#sel_rows+1] = ri3
+                end
+              end
+              local cond = r.ImGui_Cond_Once and r.ImGui_Cond_Once() or 2
+              r.ImGui_SetDragDropPayload(ctx, "TRACK_ROW", "MULTI:"..table.concat(sel_rows, ","), cond)
+              r.ImGui_Text(ctx, #sel_rows.." tracks selected")
+            else
+              local cond = r.ImGui_Cond_Once and r.ImGui_Cond_Once() or 2
+              r.ImGui_SetDragDropPayload(ctx, "TRACK_ROW", tostring(_row_i), cond)
+              r.ImGui_Text(ctx, t.name)
+            end
+            r.ImGui_EndDragDropSource(ctx)
+          end
+        end
+        -- Drop target on each row (both group and track rows)
+        if r.ImGui_BeginDragDropTarget(ctx) then
+          local ok_drop, payload = r.ImGui_AcceptDragDropPayload(ctx, "TRACK_ROW")
+          if ok_drop and payload then
+            push_undo()
+            -- Parse payload: single row index or "MULTI:i1,i2,..."
+            local src_rows = {}
+            if payload:sub(1,6) == "MULTI:" then
+              for s in payload:sub(7):gmatch("[^,]+") do
+                src_rows[#src_rows+1] = tonumber(s)
+              end
+            else
+              local n = tonumber(payload)
+              if n then src_rows[1] = n end
+            end
+            -- Sort descending so removals don't shift indices
+            table.sort(src_rows, function(a,b) return a > b end)
+            -- Remove rows from display_rows (collect in original order)
+            local moved_rows = {}
+            for _, sri in ipairs(src_rows) do
+              table.insert(moved_rows, 1, table.remove(display_rows, sri))
+            end
+            if #moved_rows > 0 then
+              -- Recalculate dest after removals
+              local dest_i = _row_i
+              for _, sri in ipairs(src_rows) do
+                if sri < dest_i then dest_i = dest_i - 1 end
+              end
+              local new_depth = is_group_row and (row_depth + 1) or row_depth
+              -- Insert all moved rows at dest in order
+              for k, moved in ipairs(moved_rows) do
+                moved.depth = new_depth
+                table.insert(display_rows, math.min(dest_i + k, #display_rows + 1), moved)
+              end
+              sync_groups_from_display()
+              -- Set pending depth adjust for all moved tracks
+              pending_depth_adjust = { row_i = dest_i + 1, idx = moved_rows[1].idx,
+                                       extra_idxs = {} }
+              for k = 2, #moved_rows do
+                pending_depth_adjust.extra_idxs[#pending_depth_adjust.extra_idxs+1] = moved_rows[k].idx
+              end
+              r.ImGui_OpenPopup(ctx, "##dpa_popup")
+            end
+          end
+          r.ImGui_EndDragDropTarget(ctx)
         end
       end
       -- Col 1: blank for group rows, checkbox for tracks
@@ -6042,11 +6274,11 @@ local function draw_track_panel(ctx, active_sc, num_gs, avail_h, btn_row_h)
         if r.ImGui_Selectable(ctx, "-- none --", t.group == NO_GROUP) then
           push_undo()
           if t.selected then
-            for _, st in ipairs(tracks) do
-              if st.selected then st.group = NO_GROUP end; display_rows_dirty = true
+            for ti2, st in ipairs(tracks) do
+              if st.selected then assign_track_to_group(ti2, NO_GROUP) end
             end
           else
-            t.group = NO_GROUP; display_rows_dirty = true
+            assign_track_to_group(i, NO_GROUP)
           end
         end
         for g = 1, NUM_GROUPS do
@@ -6058,11 +6290,11 @@ local function draw_track_panel(ctx, active_sc, num_gs, avail_h, btn_row_h)
           if r.ImGui_Selectable(ctx, groups[g].name .. "##opt"..g, is_sel) then
             push_undo()
             if t.selected then
-              for _, st in ipairs(tracks) do
-                if st.selected then st.group = g end; display_rows_dirty = true
+              for ti2, st in ipairs(tracks) do
+                if st.selected then assign_track_to_group(ti2, g) end
               end
             else
-              t.group = g; display_rows_dirty = true
+              assign_track_to_group(i, g)
             end
           end
         end
@@ -6379,6 +6611,76 @@ local function draw_track_panel(ctx, active_sc, num_gs, avail_h, btn_row_h)
 
     end  -- display_rows loop
 
+    -- ── Depth adjust popup (shown after drag-drop) ─────────────────────────
+    if pending_depth_adjust then
+      r.ImGui_SetNextWindowSize(ctx, 260, 0, r.ImGui_Cond_Always())
+      if r.ImGui_BeginPopup(ctx, "##dpa_popup") then
+        local pda   = pending_depth_adjust
+        local ri    = pda.row_i
+        local row   = display_rows[ri]
+        local depth = row and row.depth or 0
+        local tname = (tracks[pda.idx] and tracks[pda.idx].name) or "track"
+        r.ImGui_Text(ctx, "Assign \""..tname.."\" to:")
+        r.ImGui_Separator(ctx)
+        -- Build ancestor chain: one group per depth level going up from current position
+        local options = {}
+        -- (unassigned) = depth 0, no group
+        options[#options+1] = { label = "(unassigned)", depth = 0, g = NO_GROUP }
+        if ri then
+          local found_depths = {}
+          for ri2 = ri - 1, 1, -1 do
+            local r2 = display_rows[ri2]
+            if r2 and r2.type == "group" and not found_depths[r2.depth] then
+              found_depths[r2.depth] = true
+              local gname = groups[r2.g] and groups[r2.g].name or ("Group "..r2.g)
+              local indent = string.rep("  ", r2.depth + 1)
+              options[#options+1] = { label = indent.."→ "..gname, depth = r2.depth + 1, g = r2.g }
+            end
+          end
+        end
+        -- Sort by depth so shallowest first
+        table.sort(options, function(a,b) return a.depth < b.depth end)
+        local current_g = tracks[pda.idx] and tracks[pda.idx].group or NO_GROUP
+        for _, opt in ipairs(options) do
+          local is_cur = (opt.g == current_g)
+          if is_cur then
+            r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Text(), 0x88FF88FF)
+          end
+          if r.ImGui_Selectable(ctx, opt.label .. (is_cur and " \xe2\x9c\x93" or ""), is_cur) then
+            if opt.g ~= current_g then
+              push_undo()
+              -- Apply depth to the primary moved row
+              if row then row.depth = opt.depth end
+              -- Apply same depth offset to extra moved rows
+              if pda.extra_idxs then
+                for _, ex_idx in ipairs(pda.extra_idxs) do
+                  for ri3, row3 in ipairs(display_rows) do
+                    if row3.type == "track" and row3.idx == ex_idx then
+                      row3.depth = opt.depth
+                      break
+                    end
+                  end
+                end
+              end
+              sync_groups_from_display()
+            end
+            pending_depth_adjust = nil
+            r.ImGui_CloseCurrentPopup(ctx)
+          end
+          if is_cur then r.ImGui_PopStyleColor(ctx) end
+        end
+        r.ImGui_Separator(ctx)
+        if r.ImGui_Selectable(ctx, "  Cancel", false) then
+          pending_depth_adjust = nil
+          r.ImGui_CloseCurrentPopup(ctx)
+        end
+        r.ImGui_EndPopup(ctx)
+      else
+        -- Popup closed by clicking outside
+        pending_depth_adjust = nil
+      end
+    end
+
     r.ImGui_EndTable(ctx)
   end
 
@@ -6390,13 +6692,29 @@ end  -- draw_track_panel
 local function draw_track_buttons(ctx, active_sc, num_gs, avail_h)
   -- ── Buttons below track table ──────────────────────────────────────
   r.ImGui_Spacing(ctx)
-  if r.ImGui_Button(ctx, "Refresh", 80, 0) then refresh_tracks() end
+  if r.ImGui_Button(ctx, "Refresh", 80, 0) then
+    if dlg_ShowMessageBox("Refresh will clear all track panel assignments and send values.\nContinue?", "Refresh Track Panel", 4) == 6 then
+      -- Full reset: re-read tracks, clear all assignments and buffers
+      for _, t in ipairs(tracks) do
+        t.group    = NO_GROUP
+        t.sends    = {}
+        t.fx_chain = nil
+        t.pan_str  = "C"
+      end
+      send_track_buf  = {}
+      pan_track_buf   = {}
+      global_send_buf = {}
+      refresh_tracks()
+      display_rows_dirty = true
+    end
+  end
   r.ImGui_SameLine(ctx)
   if r.ImGui_Button(ctx, "Clear Groups", 80, 0) then
     if dlg_ShowMessageBox("Clear all group assignments?", "Clear Groups", 4) == 6 then
       push_undo()
-      for _, t in ipairs(tracks) do t.group = NO_GROUP end
-      display_rows_dirty = true
+      for ti2, t in ipairs(tracks) do
+        if t.group ~= NO_GROUP then assign_track_to_group(ti2, NO_GROUP) end
+      end
     end
   end
   r.ImGui_SameLine(ctx, 0, 8)
