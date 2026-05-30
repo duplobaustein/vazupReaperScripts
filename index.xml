@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="vazupReaperScripts" commit="1c63b054cd00e2e026984eec8ea1924ad076018d">
+<index version="1" name="vazupReaperScripts" commit="cee0c430d74c695d712bde35f0f6a7508e7e9ae1">
   <category name="Audio Loudness Analyzer">
     <reapack name="Audio_Loudness_Analyzer.lua" type="script" desc="Audio Loudness Analyzer">
       <metadata>
@@ -102,7 +102,7 @@
 {\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
 \widowctrl\hyphauto
 
-{\pard \ql \f0 \sa180 \li0 \fi0 \outlinelevel0 \b \fs36 ReaOrganize v2.25\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 \outlinelevel0 \b \fs36 ReaOrganize v2.34\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 ReaOrganize is a session organizer for REAPER. It lets you design your session's structure, defining groups, track send routing, FX chains, panning and colors \u8212- and then executes everything in one click via the RUN button. The core idea is that ReaOrganize works as a blueprint layer on top of your REAPER session. You define how your session should be structured in the script, and RUN builds it.\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 Basic Workflow\par}
 {\pard \ql \f0 \sa0 \li360 \fi-360 1.\tx360\tab Open ReaOrganize from the REAPER Scripts menu.\par}
@@ -114,6 +114,14 @@
 {\pard \ql \f0 \sa180 \li0 \fi0 Requires: The ReaImGui extension (install via ReaPack: Extensions > ReaPack > Browse packages > search "ReaImGui").\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 Lookup the provided manual pdf.\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 \outlinelevel1 \b \fs32 Changelog\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 \outlinelevel2 \b \fs28 v2.34\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Track Panel overhaul\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Drag & drop moves tracks in the track panel\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Ctrl+drag moves all selected tracks\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Post-drop popup shows the direct ancestor chain for hierarchy assignment\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Popup applies to all moved tracks at once\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Refresh overhaul and safety prompt\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Various bug fixes along the way\sa180\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 \outlinelevel2 \b \fs28 v2.25\par}
 {\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Option Panel overhaul\par}
 {\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab New Group and Global Send options\par}
@@ -146,6 +154,22 @@
       <version name="2.25" author="vazupReaperScripts" time="2026-05-29T20:07:42Z">
         <source main="main">https://github.com/duplobaustein/vazupReaperScripts/raw/1c63b054cd00e2e026984eec8ea1924ad076018d/ReaOrganize/ReaOrganize.lua</source>
         <source file="ReaOrganize_Manual.pdf">https://github.com/duplobaustein/vazupReaperScripts/raw/1c63b054cd00e2e026984eec8ea1924ad076018d/ReaOrganize/ReaOrganize_Manual.pdf</source>
+      </version>
+      <version name="2.34" author="vazupReaperScripts" time="2026-05-30T08:36:03Z">
+        <changelog><![CDATA[* Track Panel overhaul
+* Drag & drop moves tracks in the track panel
+* Ctrl+drag moves all selected tracks
+* Post-drop popup shows the direct ancestor chain for hierarchy assignment
+* Popup applies to all moved tracks at once
+* Refresh overhaul and safety prompt
+* Various bug fixes along the way
+* Option Panel overhaul
+* New Group and Global Send options
+* Group structure visible in Track Panel
+* Group routing in Track Panel
+* Fixed track assignment bug when moving groups]]></changelog>
+        <source main="main">https://github.com/duplobaustein/vazupReaperScripts/raw/cee0c430d74c695d712bde35f0f6a7508e7e9ae1/ReaOrganize/ReaOrganize.lua</source>
+        <source file="ReaOrganize_Manual.pdf">https://github.com/duplobaustein/vazupReaperScripts/raw/cee0c430d74c695d712bde35f0f6a7508e7e9ae1/ReaOrganize/ReaOrganize_Manual.pdf</source>
       </version>
     </reapack>
   </category>
