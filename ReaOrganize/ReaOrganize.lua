@@ -1,17 +1,17 @@
 -- @description ReaOrganize
 -- @author vazupReaperScripts
--- @version 2.59
+-- @version 2.90
 -- @changelog
---   * Track assignment bugfixes
---   * Improved drag & drop in track panel
---   * Send order bugfix
---   * UI improvements and fixes
---   * Various other bugfixes
+--   * Track Panel Layout and Selection Overhaul
+--   * New Options Group State and Pin
+--   * Added SC Feature
+--   * Set/Clr all redesign to select individual sends
+--   * Bugfixes
 -- @repository https://github.com/duplobaustein/vazupReaperScripts
 -- @links
 --   GitHub https://github.com/duplobaustein/vazupReaperScripts
 -- @about
---   # ReaOrganize v2.59
+--   # ReaOrganize v2.90
 --   ReaOrganize is a session organizer for REAPER. It lets you design your session's structure, defining groups, track send routing, FX chains, panning and colors — and then executes everything in one click via the RUN button. The core idea is that ReaOrganize works as a blueprint layer on top of your REAPER session. You define how your session should be structured in the script, and RUN builds it.
 --
 --   Basic Workflow
@@ -27,6 +27,13 @@
 --   Lookup the provided manual pdf.
 --
 --   ## Changelog
+--   ### v2.90
+--   * Track Panel Layout and Selection Overhaul
+--   * New Options Group State and Pin
+--   * Added SC Feature
+--   * Set/Clr all redesign to select individual sends
+--   * Bugfixes
+--
 --   ### v2.59
 --   * Track assignment bugfixes
 --   * Improved drag & drop in track panel
@@ -56,7 +63,7 @@ if not r.ImGui_CreateContext then
 end
 
 -- ── Version ───────────────────────────────────────────────────────────────────
-local VERSION = "v2.59"
+local VERSION = "v2.90"
 
 -- ── Constants ─────────────────────────────────────────────────────────────────
 local MAX_GROUPS   = 100
@@ -238,15 +245,11 @@ local opt_global_group_color = pack_color(80,80,120)
 local opt_global_group_route = 0   -- 0=master, -b=bus b
 local bus_color_packed      = pack_color(80, 80, 80)  -- default bus folder color
 local bus_use_panel_color   = false  -- use panel color for buses
-local opt_bus_pos       = "top"  -- "top", "bottom", "bottom_reversed"
+local opt_bus_pos             = "top"  -- "top", "bottom", "bottom_reversed"
+local opt_group_state_parent  = "normal"  -- "normal", "small", "collapsed"
+local opt_group_state_sub     = "normal"  -- "normal", "small", "collapsed"
 -- Send filter: tracks row
-local sflt_grp  = true  -- track rows: grpSends
-local sflt_bus  = true  -- track rows: busSends
-local sflt_glob = true  -- track rows: globSends
 -- Send filter: groups row
-local sflg_grp  = true  -- group rows: grpSends
-local sflg_bus  = true  -- group rows: busSends
-local sflg_glob = true  -- group rows: globSends
 local opt_spacer_all    = false  -- TCP spacer before every group
 local opt_spacer_bus    = false  -- TCP spacer before groups routed to a bus
 local opt_spacer_master = false  -- TCP spacer before groups routed to master
@@ -257,6 +260,7 @@ local opt_trim_buses         = false
 local opt_trim_gsends        = false
 local opt_trim_bsends        = false
 local opt_trim_globals       = false
+local opt_pin = { master=false, bus=false, parent=false }  -- "Pin" row
 local opt_sends_folder_bot   = true  -- move sends to bottom of their folder (default)
 local opt_send_color_packed  = pack_color(136, 136, 136)  -- default send color (0x888888)
 local opt_send_use_trk_color = false
@@ -284,11 +288,18 @@ local function make_snapshot()
     end
     local snap_folder_sends = {}
     for k, v in pairs(grp.folder_sends or {}) do snap_folder_sends[k] = v end
+    local snap_grp_sc = {}
+    for k2, v2 in ipairs(grp.sc_dests or {}) do
+      if type(v2)=="table" then
+        snap_grp_sc[k2]={key=v2.key,vol=v2.vol,pan=v2.pan,mute=v2.mute,phase=v2.phase,mono=v2.mono}
+      else snap_grp_sc[k2]=v2 end
+    end
     snap.groups[g] = {
       name            = grp.name,
       color_packed    = grp.color_packed,
       folder_template = grp.folder_template,
       folder_sends    = snap_folder_sends,
+      sc_dests        = snap_grp_sc,
       sends           = snap_sends,
       routes_to       = grp.routes_to or 0,
     }
@@ -307,6 +318,12 @@ local function make_snapshot()
     for s = 1, #global_sends do
       snap_gsvals[s] = global_send_buf[i] and global_send_buf[i][s] or ""
     end
+    local snap_sc = {}
+    for k2, v2 in ipairs(t.sc_dests or {}) do
+      if type(v2)=="table" then
+        snap_sc[k2]={key=v2.key,vol=v2.vol,pan=v2.pan,mute=v2.mute,phase=v2.phase,mono=v2.mono}
+      else snap_sc[k2]=v2 end
+    end
     snap.tracks[i] = {
       group    = t.group,
       stereo   = t.stereo,
@@ -314,6 +331,7 @@ local function make_snapshot()
       fx_chain = t.fx_chain,
       sends    = snap_tsends,
       gs_vals  = snap_gsvals,
+      sc_dests = snap_sc,
     }
   end
   for s = 1, #global_sends do
@@ -353,7 +371,13 @@ local display_rows       = {}   -- rebuilt when group assignments change
 local display_rows_dirty    = true -- force rebuild on first draw
 local grp_sends_route_w     = 90   -- shared route dropdown width (set by Grp Sends Pos row)
 local pending_depth_adjust  = nil  -- {row_i, idx} set after a drop to offer depth nudge
+local pending_sc_popup      = nil  -- {is_group=bool, idx=int} SC destination popup
+local sc_search_buf         = ""   -- search filter text in SC popup
+local active_sc_cache       = {}   -- module-level cache of active send cols (for modal)
+local sa_track              = {}   -- [send_key]=bool, per-send Tracks filter (default true)
+local sa_group              = {}   -- [send_key]=bool, per-send Groups filter (default true)
 local drag_ctrl_held        = false -- true if Ctrl was held when drag started
+local nav_focus_req         = nil   -- {row_i=N, col=N} cell to SetKeyboardFocusHere this frame
 
 local function restore_snapshot(snap)
   NUM_GROUPS = snap.NUM_GROUPS
@@ -383,6 +407,7 @@ local function restore_snapshot(snap)
       color_packed    = sg.color_packed,
       folder_template = sg.folder_template,
       folder_sends    = sg.folder_sends or {},
+      sc_dests        = (function() local d={}; for k,v in ipairs(sg.sc_dests or {}) do d[k]=v end; return d end)(),
       sends           = r_sends,
       routes_to       = sg.routes_to or 0,
       pan_str         = sg.pan_str or "C",
@@ -689,16 +714,6 @@ local function open_picker(target, i, g, s)
   picker_rebuild_filtered()
 end
 
-local function group_path_to_root(g)
-  local path = {}
-  local cur = g
-  while cur and cur ~= 0 do
-    path[#path+1] = cur
-    cur = (groups[cur] and groups[cur].routes_to) or 0
-  end
-  return path
-end
-
 -- True if g2 is a descendant of g1 (g2 is inside g1's subtree)
 local function is_group_descendant(g2, g1)
   if g2 == 0 or g1 == 0 then return false end
@@ -918,7 +933,7 @@ local function refresh_tracks()
       pan_str    = init_pan_str,
       sends      = new_sends,
       fx_chain   = prev.fx_chain,
-      guid       = guid,
+      sc_dests   = prev.sc_dests or {},
     }
     rename_track_buf[new_idx] = name
     pan_track_buf[new_idx] = init_pan_str
@@ -962,7 +977,9 @@ local function init_groups()
       sends         = {},    -- array of up to MAX_SENDS {template=path}
       routes_to     = 0,     -- 0 = master, or group index
       pan_str       = "C",   -- group folder track pan
-    folder_sends  = {},    -- [skey] = db_str for folder track send amounts
+      folder_sends  = {},    -- [skey] = db_str for folder track send amounts
+      sc_dests      = {},    -- list of SC destination keys
+      selected      = false,  -- for Set All "Selected Only"
     }
     rename_group_buf[i] = "Group " .. i
   end
@@ -1158,22 +1175,6 @@ local function run()
     -- Order GUID list by original track position:
     -- direct members and child subtrees are interleaved by their min position,
     -- so a stereo pair that sits after the subgroup tracks stays after them.
-    local function subtree_min_pos(gg)
-      local min = math.huge
-      for _, m in ipairs(group_members[gg]) do
-        if m.guid then
-          local p = track_index(m.guid)
-          if p and p < min then min = p end
-        end
-      end
-      for _, cg in ipairs(group_children_map[gg]) do
-        if has_any_active(cg) then
-          local p = subtree_min_pos(cg)
-          if p < min then min = p end
-        end
-      end
-      return min
-    end
 
     local function ordered_guids(gg)
       local out   = {}
@@ -1868,6 +1869,11 @@ local function run()
     end
     if opt_trim_globals then
       r.Main_OnCommand(40297, 0)  -- clear before selecting globals
+      -- Include the global send group folder if it exists
+      if _gs_folder_guid then
+        local _, gsftr = find_track_by_guid(_gs_folder_guid)
+        if gsftr then r.SetTrackSelected(gsftr, true) end
+      end
       for _, gg in ipairs(global_send_guids) do
         local _, tr = find_track_by_guid(gg); if tr then r.SetTrackSelected(tr, true) end
       end
@@ -1892,11 +1898,6 @@ local function run()
         ch = ch:gsub("(<TRACK[^\n]*\n)", "%1SPACER 1\n", 1)
         r.SetTrackStateChunk(tr, ch, false)
       end
-    end
-    local function insert_spacer()
-      local p = r.CountTracks(0)
-      r.InsertTrackAtIndex(p, false)
-      set_spacer(r.GetTrack(0, p))
     end
     local function append_bus_track(b)
       local p = r.CountTracks(0)
@@ -2012,6 +2013,23 @@ local function run()
         end
       end
     end
+    -- Wire bus send tracks to their parent bus track
+    for b = 1, NUM_BUSES do
+      if bus_track_guids[b] and send_track_guids_by_bus[b] then
+        local _, btr3 = find_track_by_guid(bus_track_guids[b])
+        if btr3 then
+          for s, bsg3 in pairs(send_track_guids_by_bus[b]) do
+            local _, bstr3 = find_track_by_guid(bsg3)
+            if bstr3 then
+              local si3 = r.CreateTrackSend(bstr3, btr3)
+              r.SetTrackSendInfo_Value(bstr3, 0, si3, "D_VOL", 1.0)
+              r.SetTrackSendInfo_Value(bstr3, 0, si3, "I_SENDMODE", 0)
+              r.SetMediaTrackInfo_Value(bstr3, "B_MAINSEND", 0)
+            end
+          end
+        end
+      end
+    end
     -- Wire group folder tracks to their bus
     for g = 1, NUM_GROUPS do
       local rt = groups[g].routes_to or 0
@@ -2032,6 +2050,147 @@ local function run()
     r.PreventUIRefresh(-1)
     r.Undo_EndBlock("ReaOrganize: insert bus tracks", -1)
     refresh_guid_cache()  -- bus+send tracks inserted; populate cache
+  end
+
+
+  -- ── SC (sidechain) sends: pin 3/4 ────────────────────────────────────────────
+  local function apply_sc_dests(src_tr, sc_list)
+    if not src_tr or not sc_list or #sc_list == 0 then return end
+    for _, entry in ipairs(sc_list) do
+      local k = type(entry)=="table" and entry.key or entry
+      local dst_tr = nil
+      local ti = k:match("^t:(%d+)$")
+      if ti and tracks[tonumber(ti)] then
+        local _, tr2 = find_track_by_guid(tracks[tonumber(ti)].guid)
+        dst_tr = tr2
+      else
+        local gi = k:match("^g:(%d+)$")
+        if gi and folder_track_guid[tonumber(gi)] then
+          local _, tr2 = find_track_by_guid(folder_track_guid[tonumber(gi)])
+          dst_tr = tr2
+        else
+          local bi = k:match("^bus:(%d+)$")
+          if bi and bus_track_guids[tonumber(bi)] then
+            local _, tr2 = find_track_by_guid(bus_track_guids[tonumber(bi)])
+            dst_tr = tr2
+          else
+            local gg, ss = k:match("^gs:(%d+):(%d+)$")
+            if gg and send_track_guids[tonumber(gg)] then
+              local _, tr2 = find_track_by_guid(send_track_guids[tonumber(gg)][tonumber(ss)])
+              dst_tr = tr2
+            else
+              local bb, bs = k:match("^bs:(%d+):(%d+)$")
+              if bb and send_track_guids_by_bus[tonumber(bb)] then
+                local _, tr2 = find_track_by_guid(send_track_guids_by_bus[tonumber(bb)][tonumber(bs)])
+                dst_tr = tr2
+              else
+                local gls = k:match("^gls:(%d+)$")
+                if gls and global_send_guids[tonumber(gls)] then
+                  local _, tr2 = find_track_by_guid(global_send_guids[tonumber(gls)])
+                  dst_tr = tr2
+                end
+              end
+            end
+          end
+        end
+      end
+      if dst_tr then
+        local si = r.CreateTrackSend(src_tr, dst_tr)
+        r.SetTrackSendInfo_Value(src_tr, 0, si, "I_DSTCHAN", 2)  -- sidechain pin 3/4
+        -- Mono: set bit 10 (0x400) on I_SRCCHAN; also mirror on receive side
+        local is_mono = type(entry)=="table" and (entry.mono or false)
+        r.SetTrackSendInfo_Value(src_tr, 0, si, "I_SRCCHAN", 0)
+        r.SetTrackSendInfo_Value(src_tr, 0, si, "B_MONO",  is_mono and 1.0 or 0.0)
+        r.SetTrackSendInfo_Value(src_tr, 0, si, "D_VOL",
+          (type(entry)=="table" and parse_db(entry.vol or "0")) or 1.0)
+        r.SetTrackSendInfo_Value(src_tr, 0, si, "D_PAN",
+          (type(entry)=="table" and parse_pan(entry.pan or "C")) or 0.0)
+        r.SetTrackSendInfo_Value(src_tr, 0, si, "B_MUTE",
+          (type(entry)=="table" and entry.mute) and 1.0 or 0.0)
+        r.SetTrackSendInfo_Value(src_tr, 0, si, "B_PHASE",
+          (type(entry)=="table" and entry.phase) and 1.0 or 0.0)
+        r.SetTrackSendInfo_Value(src_tr, 0, si, "I_SENDMODE", 0)
+      end
+    end
+  end
+  -- Apply to tracks
+  for ti, t in ipairs(tracks) do
+    if t.sc_dests and #t.sc_dests > 0 then
+      local _, src_tr = find_track_by_guid(t.guid)
+      apply_sc_dests(src_tr, t.sc_dests)
+    end
+  end
+  -- Apply to groups (folder tracks)
+  for g = 1, NUM_GROUPS do
+    if groups[g].sc_dests and #groups[g].sc_dests > 0 and folder_track_guid[g] then
+      local _, src_tr = find_track_by_guid(folder_track_guid[g])
+      apply_sc_dests(src_tr, groups[g].sc_dests)
+    end
+  end
+
+
+  -- ── Pin: master visibility / pin bus & parent group tracks to top ───────────
+  if opt_pin.master then
+    local mvis = r.GetMasterTrackVisibility()
+    if (mvis & 1) == 0 then
+      r.SetMasterTrackVisibility(mvis | 1)
+    end
+  end
+  if opt_pin.bus then
+    for b = 1, NUM_BUSES do
+      if bus_track_guids[b] then
+        local _, btr = find_track_by_guid(bus_track_guids[b])
+        if btr then r.SetMediaTrackInfo_Value(btr, "B_TCPPIN", 1) end
+      end
+    end
+  end
+  if opt_pin.parent then
+    for g = 1, NUM_GROUPS do
+      local rt = groups[g].routes_to or 0
+      if rt <= 0 and folder_track_guid[g] then
+        local _, ftr = find_track_by_guid(folder_track_guid[g])
+        if ftr then r.SetMediaTrackInfo_Value(ftr, "B_TCPPIN", 1) end
+      end
+    end
+  end
+
+  -- ── Group State: apply folder collapsed/small state via SWS ────────────────
+  if opt_group_state_parent ~= "normal" or opt_group_state_sub ~= "normal" then
+    local sws_collapse = r.NamedCommandLookup("_SWS_COLLAPSE")
+    local sws_small    = r.NamedCommandLookup("_SWS_FOLDSMALL")
+    -- Apply to parent groups (routes_to == 0 or < 0 = master or bus)
+    if opt_group_state_parent ~= "normal" and sws_collapse ~= 0 then
+      r.Main_OnCommand(40297, 0)
+      for g = 1, NUM_GROUPS do
+        local rt = groups[g].routes_to or 0
+        if rt <= 0 and folder_track_guid[g] then
+          local _, ftr = find_track_by_guid(folder_track_guid[g])
+          if ftr then r.SetTrackSelected(ftr, true) end
+        end
+      end
+      if opt_group_state_parent == "collapsed" then
+        r.Main_OnCommand(sws_collapse, 0)
+      elseif opt_group_state_parent == "small" then
+        r.Main_OnCommand(sws_small, 0)
+      end
+    end
+    -- Apply to subgroups (routes_to > 0 = routes to another group)
+    if opt_group_state_sub ~= "normal" and sws_collapse ~= 0 then
+      r.Main_OnCommand(40297, 0)
+      for g = 1, NUM_GROUPS do
+        local rt = groups[g].routes_to or 0
+        if rt > 0 and folder_track_guid[g] then
+          local _, ftr = find_track_by_guid(folder_track_guid[g])
+          if ftr then r.SetTrackSelected(ftr, true) end
+        end
+      end
+      if opt_group_state_sub == "collapsed" then
+        r.Main_OnCommand(sws_collapse, 0)
+      elseif opt_group_state_sub == "small" then
+        r.Main_OnCommand(sws_small, 0)
+      end
+    end
+    r.Main_OnCommand(40297, 0)  -- clear selection
   end
 
   -- ── Step 5.6: wire group folder tracks to send/bus/global tracks ─────
@@ -2447,6 +2606,9 @@ local function preset_to_lines(p, slot)
   w("opt_trimgs",  slot.opt_trim_gsends         and "1" or "0")
   w("opt_trimbs",  slot.opt_trim_bsends         and "1" or "0")
   w("opt_trimgl",  slot.opt_trim_globals        and "1" or "0")
+  w("opt_pinmst",  slot.opt_pin and slot.opt_pin.master and "1" or "0")
+  w("opt_pinbus",  slot.opt_pin and slot.opt_pin.bus    and "1" or "0")
+  w("opt_pinpar",  slot.opt_pin and slot.opt_pin.parent and "1" or "0")
   w("ps_chains",   slot.picker_show_chains ~= false and "1" or "0")
   w("ps_vst3",     slot.picker_show_vst3   ~= false and "1" or "0")
   w("ps_vst",      slot.picker_show_vst    ~= false and "1" or "0")
@@ -2458,6 +2620,8 @@ local function preset_to_lines(p, slot)
   w("opt_buscol",  tostring(slot.bus_color_packed or 0))
   w("opt_busupc",  slot.bus_use_panel_color and "1" or "0")
   w("opt_buspos",  slot.opt_bus_pos or "top")
+    w("opt_gstp",   slot.opt_group_state_parent or "normal")
+    w("opt_gsts",   slot.opt_group_state_sub    or "normal")
   w("opt_sgrpnm",  slot.opt_sends_group_name or "Group Sends")
   w("opt_sgrpcl",  tostring(slot.opt_sends_group_color or 0))
   w("opt_sgrprt",  tostring(slot.opt_sends_group_route or 0))
@@ -2538,6 +2702,7 @@ local function lines_to_preset(lines)
   slot.opt_trim_gsends        = kv["opt_trimgs"]  == "1"
   slot.opt_trim_bsends        = kv["opt_trimbs"]  == "1"
   slot.opt_trim_globals       = kv["opt_trimgl"]  == "1"
+  slot.opt_pin = { master = kv["opt_pinmst"] == "1", bus = kv["opt_pinbus"] == "1", parent = kv["opt_pinpar"] == "1" }
   slot.picker_show_chains = kv["ps_chains"] ~= "0"
   slot.picker_show_vst3   = kv["ps_vst3"]   ~= "0"
   slot.picker_show_vst    = kv["ps_vst"]    ~= "0"
@@ -2550,6 +2715,8 @@ local function lines_to_preset(lines)
   slot.bus_use_panel_color = kv["opt_busupc"] == "1"
   slot.opt_bus_pos = kv["opt_buspos"] ~= "" and kv["opt_buspos"] or "top"
   if slot.opt_bus_pos == "" then slot.opt_bus_pos = "top" end
+  slot.opt_group_state_parent = kv["opt_gstp"] ~= "" and kv["opt_gstp"] or "normal"
+  slot.opt_group_state_sub    = kv["opt_gsts"] ~= "" and kv["opt_gsts"] or "normal"
   slot.opt_sends_group_name = kv["opt_sgrpnm"] ~= "" and kv["opt_sgrpnm"] or "Group Sends"
   if slot.opt_sends_group_name == "" then slot.opt_sends_group_name = "top" end
   slot.opt_sends_group_color = tonumber(kv["opt_sgrpcl"]) or 0
@@ -2712,6 +2879,11 @@ local function load_presets()
     slot.opt_trim_gsends      = r.GetExtState(EXT_SECTION, "preset_"..p.."_opt_trimgs") == "1"
     slot.opt_trim_bsends      = r.GetExtState(EXT_SECTION, "preset_"..p.."_opt_trimbs") == "1"
     slot.opt_trim_globals     = r.GetExtState(EXT_SECTION, "preset_"..p.."_opt_trimgl") == "1"
+  slot.opt_pin = {
+    master = r.GetExtState(EXT_SECTION, "preset_"..p.."_opt_pinmst") == "1",
+    bus    = r.GetExtState(EXT_SECTION, "preset_"..p.."_opt_pinbus") == "1",
+    parent = r.GetExtState(EXT_SECTION, "preset_"..p.."_opt_pinpar") == "1",
+  }
         slot.opt_sends_folder_bot   = r.GetExtState(EXT_SECTION, "preset_"..p.."_opt_sndfbt") == "1"
               slot.opt_sends_at_bottom    = r.GetExtState(EXT_SECTION, "preset_"..p.."_opt_sndbot") == "1"
         slot.opt_send_color_packed  = tonumber(r.GetExtState(EXT_SECTION, "preset_"..p.."_opt_sndclr")) or 0x888888
@@ -2753,16 +2925,6 @@ end
 
 -- ── GUI ───────────────────────────────────────────────────────────────────────
 
-local function imgui_color_to_packed(col32)
-  -- ImGui color is 0xRRGGBBAA, we want 0xRRGGBB
-  return (col32 >> 8) & 0xFFFFFF
-end
-
-local function fx_preview_label(s)
-  if not s then return "-- none --" end
-  return s:gsub("%.rfxchain$",""):gsub("%.RfxChain$",""):gsub("%.RFXCHAIN$","")
-end
-
 -- Returns the preview label for any FX value (chain path or plugin name)
 local function fx_preview(val)
   if not val then return nil end
@@ -2783,12 +2945,6 @@ local function build_display_rows()
   local visited = {}
 
   -- Returns true if group g has any directly assigned tracks
-  local function group_has_tracks(g)
-    for _, t in ipairs(tracks) do
-      if t.group == g then return true end
-    end
-    return false
-  end
 
   -- DFS: emit group header + its tracks + subgroups (only if subtree has tracks)
   local function emit_group(g, depth)
@@ -2891,14 +3047,6 @@ local function sync_groups_from_display()
 end
 
 -- Find which group a display row index is "under" (nearest preceding group header)
-local function group_of_display_pos(pos)
-  for i = pos - 1, 1, -1 do
-    if display_rows[i] and display_rows[i].type == "group" then
-      return display_rows[i].g, display_rows[i].depth
-    end
-  end
-  return NO_GROUP, 0
-end
 
 -- Find last row index belonging to group g (including its subgroup subtree)
 local function last_row_of_group(g)
@@ -3004,6 +3152,11 @@ local function assign_track_to_group(track_idx, g)
   sync_groups_from_display()
 end
 
+local function sa_key(sc)
+  if sc.type=="bus" then return "b"..sc.b.."_s"..sc.s else return "g"..sc.g.."_s"..sc.s end
+end
+local function sa_key_gs(n) return "gs"..n end
+
 local function build_active_send_cols()
   local cols = {}
   for g = 1, NUM_GROUPS do
@@ -3021,17 +3174,6 @@ end
 
 -- Returns the effective display color for a group:
 -- if it routes into another group (chain of any depth), inherit the root group's color.
-local function get_group_display_color(g)
-  local cur = g
-  local limit = 64
-  while limit > 0 do
-    local rt = (groups[cur] and groups[cur].routes_to) or 0
-    if rt == 0 or rt > NUM_GROUPS then break end
-    cur = rt
-    limit = limit - 1
-  end
-  return groups[cur] and groups[cur].color_packed or (groups[g] and groups[g].color_packed) or 0x888888
-end
 
 -- Apply a send value to a send slot for all eligible tracks or selected only.
 -- val: string to set ("0", "i", "")  g: group index  s: slot index
@@ -3096,35 +3238,28 @@ local function apply_global_send_value(val, scope_all, s)
 end
 
 -- Apply a send value to ALL group-row folder_sends in the track panel.
-local function apply_all_group_row_sends(val)
+local function apply_all_group_row_sends(val, scope_all)
   for g2 = 1, NUM_GROUPS do
-    if groups[g2].folder_sends then
-      -- group sends
-      if sflg_grp then
-        for g3 = 1, NUM_GROUPS do
-          local skey = g3..":1"
+    if groups[g2].folder_sends and (scope_all ~= false or groups[g2].selected) then
+      for g3 = 1, NUM_GROUPS do
+        if groups[g3] then
           for s3 = 1, #(groups[g3].sends or {}) do
-            local skey2 = g3..":"..s3
-            if groups[g2].folder_sends[skey2] ~= nil or true then
-              groups[g2].folder_sends[skey2] = val ~= "" and val or nil
+            if sa_group["g"..g3.."_s"..s3] ~= false then
+              groups[g2].folder_sends[g3..":"..s3] = val ~= "" and val or nil
             end
           end
         end
       end
-      -- bus sends
-      if sflg_bus then
-        for b2 = 1, NUM_BUSES do
-          for s2 = 1, #(buses[b2].sends or {}) do
-            local skey = "b:"..b2..":"..s2
-            groups[g2].folder_sends[skey] = val ~= "" and val or nil
+      for b2 = 1, NUM_BUSES do
+        for s2 = 1, #(buses[b2].sends or {}) do
+          if sa_group["b"..b2.."_s"..s2] ~= false then
+            groups[g2].folder_sends["b:"..b2..":"..s2] = val ~= "" and val or nil
           end
         end
       end
-      -- global sends
-      if sflg_glob then
-        for s2 = 1, #global_sends do
-          local skey = "gs:"..s2
-          groups[g2].folder_sends[skey] = val ~= "" and val or nil
+      for s2 = 1, #global_sends do
+        if sa_group["gs"..s2] ~= false then
+          groups[g2].folder_sends["gs:"..s2] = val ~= "" and val or nil
         end
       end
     end
@@ -3133,26 +3268,22 @@ end
 
 -- Apply a send value to ALL send slots across all groups.
 local function apply_all_sends_value(val, scope_all)
-  if sflt_grp then
-    for g2 = 1, NUM_GROUPS do
-      for s2 = 1, #(groups[g2].sends or {}) do
-        if groups[g2].sends[s2] then
-          apply_send_slot_value(val, scope_all, g2, s2)
-        end
+  for g2 = 1, NUM_GROUPS do
+    for s2 = 1, #(groups[g2].sends or {}) do
+      if groups[g2].sends[s2] and sa_track["g"..g2.."_s"..s2] ~= false then
+        apply_send_slot_value(val, scope_all, g2, s2)
       end
     end
   end
-  if sflt_bus then
-    for b2 = 1, NUM_BUSES do
-      for s2 = 1, #(buses[b2].sends or {}) do
-        if buses[b2].sends[s2] and (buses[b2].sends[s2].name or "") ~= "" then
-          apply_bus_send_slot_value(val, scope_all, b2, s2)
-        end
+  for b2 = 1, NUM_BUSES do
+    for s2 = 1, #(buses[b2].sends or {}) do
+      if buses[b2].sends[s2] and (buses[b2].sends[s2].name or "") ~= "" and sa_track["b"..b2.."_s"..s2] ~= false then
+        apply_bus_send_slot_value(val, scope_all, b2, s2)
       end
     end
   end
-  if sflt_glob then
-    for s2 = 1, #global_sends do
+  for s2 = 1, #global_sends do
+    if sa_track["gs"..s2] ~= false then
       apply_global_send_value(val, scope_all, s2)
     end
   end
@@ -4008,8 +4139,7 @@ local function draw_bus_panel(ctx, groups_w)
         if b_is_highlighted then
           r.ImGui_TableSetBgColor(ctx, r.ImGui_TableBgTarget_RowBg1(), 0x2a4a6aFF)
         end
-        local b_hl_border = b_is_highlighted
-        r.ImGui_TableSetColumnIndex(ctx, 0)
+                r.ImGui_TableSetColumnIndex(ctx, 0)
         if bslot_exists then
           local bcol_w=r.ImGui_GetContentRegionAvail(ctx); local blbl="S"..s
           local btw=r.ImGui_CalcTextSize(ctx,blbl)
@@ -4132,9 +4262,8 @@ local function draw_bus_panel(ctx, groups_w)
           local bcw5=r.ImGui_GetContentRegionAvail(ctx)
           r.ImGui_SetCursorPosX(ctx,r.ImGui_GetCursorPosX(ctx)+math.max(0,math.floor((bcw5-19)/2)))
           r.ImGui_PushStyleColor(ctx,r.ImGui_Col_Text(),bpre and 0xFFDDAAFF or 0x666666FF)
-          local bpfc,bpfv=r.ImGui_Checkbox(ctx,"##bspre"..b.."_"..s,bpre)
+          if r.ImGui_RadioButton(ctx,"##bspre"..b.."_"..s,bpre) then push_undo();buses[b].sends[s].pre_fader=not bpre end
           r.ImGui_PopStyleColor(ctx)
-          if bpfc then push_undo();buses[b].sends[s].pre_fader=bpfv end
         end
         if not bslot_exists then break end
       end  -- for s
@@ -4755,9 +4884,8 @@ local function draw_group_panel(ctx, groups_w)
             local cb_sz = 19
             r.ImGui_SetCursorPosX(ctx, r.ImGui_GetCursorPosX(ctx) + math.max(0, math.floor((cw5 - cb_sz) / 2)))
             r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Text(), pre_v and 0xFFDDAAFF or 0x666666FF)
-            local pre_ch, pre_nv = r.ImGui_Checkbox(ctx, "##spre"..g.."_"..s, pre_v)
+            if r.ImGui_RadioButton(ctx, "##spre"..g.."_"..s, pre_v) then push_undo(); groups[g].sends[s].pre_fader = not pre_v end
             r.ImGui_PopStyleColor(ctx)
-            if pre_ch then push_undo(); groups[g].sends[s].pre_fader = pre_nv end
           end
 
       end -- per-slot loop
@@ -4988,7 +5116,9 @@ local function draw_global_sends_panel(ctx, groups_w)
   r.ImGui_PushStyleVar(ctx, r.ImGui_StyleVar_ItemSpacing(), 0, 1)
   if r.ImGui_BeginTable(ctx, "gs_hdr", 1, r.ImGui_TableFlags_BordersOuter(), groups_w, 0) then
     r.ImGui_TableSetupColumn(ctx, "Global Sends", r.ImGui_TableColumnFlags_WidthStretch())
+    r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Text(), 0xBB88FFFF)
     r.ImGui_TableHeadersRow(ctx)
+    r.ImGui_PopStyleColor(ctx)
     r.ImGui_EndTable(ctx)
   end
   r.ImGui_PopStyleVar(ctx)  -- ItemSpacing
@@ -5154,9 +5284,8 @@ local function draw_global_sends_panel(ctx, groups_w)
         r.ImGui_TableSetColumnIndex(ctx, 5)
         local gs_pre = gs.pre_fader or false
         r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Text(), gs_pre and 0xFFDDAAFF or 0x666666FF)
-        local gspch, gspv = r.ImGui_Checkbox(ctx, "##gspre"..s, gs_pre)
+        if r.ImGui_RadioButton(ctx, "##gspre"..s, gs_pre) then push_undo(); gs.pre_fader = not gs_pre end
         r.ImGui_PopStyleColor(ctx)
-        if gspch then push_undo(); gs.pre_fader = gspv end
       end
     end
     -- Deferred removal
@@ -5343,7 +5472,7 @@ local function draw_options_panel(ctx, groups_w)
     do local _, fpy5 = r.ImGui_GetStyleVar(ctx, r.ImGui_StyleVar_FramePadding())
       r.ImGui_SetCursorPosY(ctx, r.ImGui_GetCursorPosY(ctx) + fpy5)
       r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Text(), 0xAAAAAAAA)
-      r.ImGui_Text(ctx, "Group Colors")
+      r.ImGui_Text(ctx, "Group Color")
       r.ImGui_PopStyleColor(ctx)
     end
     r.ImGui_TableSetColumnIndex(ctx, 1)
@@ -5454,6 +5583,48 @@ local function draw_options_panel(ctx, groups_w)
     end
 
     -- ── FX Bypass ───────────────────────────────────────────────────────────
+    r.ImGui_TableNextRow(ctx)
+    -- ── Group State ──────────────────────────────────────────────────────
+    r.ImGui_TableNextRow(ctx)
+    r.ImGui_TableSetColumnIndex(ctx, 0)
+    do local _,fpy_gs=r.ImGui_GetStyleVar(ctx,r.ImGui_StyleVar_FramePadding())
+      r.ImGui_SetCursorPosY(ctx,r.ImGui_GetCursorPosY(ctx)+fpy_gs)
+      r.ImGui_PushStyleColor(ctx,r.ImGui_Col_Text(),0xAAAAAAAA)
+      r.ImGui_Text(ctx,"Group State")
+      r.ImGui_PopStyleColor(ctx)
+    end
+    r.ImGui_TableSetColumnIndex(ctx, 1)
+    do
+      local gs_opts = { "normal", "small", "collapsed" }
+      local gs_labels = { "Normal", "Small", "Collapsed" }
+      local function gs_combo(label, cur_val, id)
+        local cur_idx = 1
+        for k,v in ipairs(gs_opts) do if v == cur_val then cur_idx = k end end
+        r.ImGui_SetNextItemWidth(ctx, 110)
+        local rv = cur_val
+        if r.ImGui_BeginCombo(ctx, label.."##"..id, gs_labels[cur_idx]) then
+          for k,v in ipairs(gs_opts) do
+            if r.ImGui_Selectable(ctx, gs_labels[k].."##gs"..id..k, v == cur_val) then
+              push_undo(); rv = v
+            end
+          end
+          r.ImGui_EndCombo(ctx)
+        end
+        return rv
+      end
+      r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Text(), 0xCCCCCCFF)
+      r.ImGui_Text(ctx, "Parent")
+      r.ImGui_PopStyleColor(ctx)
+      r.ImGui_SameLine(ctx, 0, 6)
+      opt_group_state_parent = gs_combo("##gsp", opt_group_state_parent, "p")
+      r.ImGui_SameLine(ctx, 0, 12)
+      r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Text(), 0xCCCCCCFF)
+      r.ImGui_Text(ctx, "Sub")
+      r.ImGui_PopStyleColor(ctx)
+      r.ImGui_SameLine(ctx, 0, 6)
+      opt_group_state_sub = gs_combo("##gss", opt_group_state_sub, "s")
+    end
+
     r.ImGui_TableNextRow(ctx)
     r.ImGui_TableSetColumnIndex(ctx, 0)
     do local _,fpy_bp=r.ImGui_GetStyleVar(ctx,r.ImGui_StyleVar_FramePadding())
@@ -5730,6 +5901,33 @@ local function draw_options_panel(ctx, groups_w)
       end
     end
 
+    -- ── Pin ─────────────────────────────────────────────────────────────────
+    r.ImGui_TableNextRow(ctx)
+    r.ImGui_TableSetColumnIndex(ctx, 0)
+    do local _, fpypin = r.ImGui_GetStyleVar(ctx, r.ImGui_StyleVar_FramePadding())
+      r.ImGui_SetCursorPosY(ctx, r.ImGui_GetCursorPosY(ctx) + fpypin)
+      r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Text(), 0xAAAAAAAA)
+      r.ImGui_Text(ctx, "Pin")
+      r.ImGui_PopStyleColor(ctx)
+    end
+    r.ImGui_TableSetColumnIndex(ctx, 1)
+    do
+      do
+        local c,v = r.ImGui_Checkbox(ctx, "Master##pinmst", opt_pin.master)
+        if c then push_undo(); opt_pin.master = v end
+      end
+      r.ImGui_SameLine(ctx,0,8)
+      do
+        local c,v = r.ImGui_Checkbox(ctx, "Bus##pinbus", opt_pin.bus)
+        if c then push_undo(); opt_pin.bus = v end
+      end
+      r.ImGui_SameLine(ctx,0,8)
+      do
+        local c,v = r.ImGui_Checkbox(ctx, "Parent##pinpar", opt_pin.parent)
+        if c then push_undo(); opt_pin.parent = v end
+      end
+    end
+
     -- ── Spacers ─────────────────────────────────────────────────────────────
     r.ImGui_TableNextRow(ctx)
     r.ImGui_TableSetColumnIndex(ctx, 0)
@@ -5823,7 +6021,9 @@ local function draw_presets_panel(ctx, groups_w, avail_h)
               for s2 = 1, #(groups[g].sends or {}) do
                 sg[s2] = { template = groups[g].sends[s2].template, name = groups[g].sends[s2].name or "", color_packed = groups[g].sends[s2].color_packed or 0x888888, pre_fader = groups[g].sends[s2].pre_fader or false }
               end
-              slot.groups[g] = { name = groups[g].name, color_packed = groups[g].color_packed, folder_template = groups[g].folder_template, sends = sg, routes_to = groups[g].routes_to or 0, pan_str = groups[g].pan_str or "C" }
+              local fsd = {}
+              for k,v in pairs(groups[g].folder_sends or {}) do fsd[k]=v end
+              slot.groups[g] = { name = groups[g].name, color_packed = groups[g].color_packed, folder_template = groups[g].folder_template, sends = sg, routes_to = groups[g].routes_to or 0, pan_str = groups[g].pan_str or "C", folder_sends = fsd }
             end
             slot.global_sends = {}
             for s = 1, #global_sends do
@@ -5840,6 +6040,7 @@ local function draw_presets_panel(ctx, groups_w, avail_h)
     slot.opt_trim_gsends        = opt_trim_gsends
     slot.opt_trim_bsends        = opt_trim_bsends
     slot.opt_trim_globals       = opt_trim_globals
+    slot.opt_pin = { master = opt_pin.master, bus = opt_pin.bus, parent = opt_pin.parent }
             slot.opt_spacer_all         = opt_spacer_all
             slot.opt_spacer_bus         = opt_spacer_bus
             slot.opt_spacer_master      = opt_spacer_master
@@ -5863,7 +6064,8 @@ local function draw_presets_panel(ctx, groups_w, avail_h)
     slot.opt_global_group_color = opt_global_group_color
     slot.opt_global_group_route = opt_global_group_route
     slot.opt_sends_routing      = opt_sends_routing
-            slot.parent_color_packed    = parent_color_packed
+    slot.opt_group_state_parent = opt_group_state_parent
+    slot.opt_group_state_sub    = opt_group_state_sub
             slot.bus_color_packed       = bus_color_packed
             slot.bus_use_panel_color    = bus_use_panel_color
             slot.parent_use_track_color = parent_use_track_color
@@ -5900,8 +6102,8 @@ local function draw_presets_panel(ctx, groups_w, avail_h)
         push_undo()
         local slot = presets[p]
         preset_name_buf[p]     = slot.name or preset_name_buf[p]
-        parent_color_packed    = slot.parent_color
-        parent_use_track_color = slot.parent_use_track_color
+        -- parent_color_packed restored later via slot.parent_color_packed check
+        parent_use_track_color = slot.parent_use_track_color or false
         -- Deep-copy groups so live edits never mutate the stored snapshot
         NUM_GROUPS = #slot.groups
         groups = {}
@@ -5912,12 +6114,16 @@ local function draw_presets_panel(ctx, groups_w, avail_h)
           for s = 1, #src_sends do
             sends_copy[s] = { template = src_sends[s].template, name = src_sends[s].name or "", color_packed = src_sends[s].color_packed or 0x888888, pre_fader = src_sends[s].pre_fader or false }
           end
+          local fsd2 = {}
+          for k,v in pairs(slot.groups[g].folder_sends or {}) do fsd2[k]=v end
           groups[g] = {
             name            = slot.groups[g].name,
             color_packed    = slot.groups[g].color_packed,
             folder_template = slot.groups[g].folder_template,
             sends           = sends_copy,
             routes_to       = slot.groups[g].routes_to or 0,
+            pan_str         = slot.groups[g].pan_str or "C",
+            folder_sends    = fsd2,
           }
           rename_group_buf[g] = slot.groups[g].name
         end
@@ -5943,6 +6149,11 @@ local function draw_presets_panel(ctx, groups_w, avail_h)
     if slot.opt_trim_gsends        ~= nil then opt_trim_gsends        = slot.opt_trim_gsends        end
     if slot.opt_trim_bsends        ~= nil then opt_trim_bsends        = slot.opt_trim_bsends        end
     if slot.opt_trim_globals       ~= nil then opt_trim_globals       = slot.opt_trim_globals       end
+  if slot.opt_pin ~= nil then
+    opt_pin.master = slot.opt_pin.master or false
+    opt_pin.bus    = slot.opt_pin.bus    or false
+    opt_pin.parent = slot.opt_pin.parent or false
+  end
         if slot.opt_spacer_all         ~= nil then opt_spacer_all         = slot.opt_spacer_all         end
         if slot.opt_spacer_bus         ~= nil then opt_spacer_bus         = slot.opt_spacer_bus         end
         if slot.opt_spacer_master      ~= nil then opt_spacer_master      = slot.opt_spacer_master      end
@@ -5969,6 +6180,8 @@ local function draw_presets_panel(ctx, groups_w, avail_h)
     if slot.opt_global_group_color ~= nil then opt_global_group_color = slot.opt_global_group_color end
     if slot.opt_global_group_route ~= nil then opt_global_group_route = slot.opt_global_group_route end
     if slot.opt_sends_routing      ~= nil then opt_sends_routing      = slot.opt_sends_routing      end
+        if slot.opt_group_state_parent ~= nil then opt_group_state_parent = slot.opt_group_state_parent end
+        if slot.opt_group_state_sub    ~= nil then opt_group_state_sub    = slot.opt_group_state_sub    end
         if slot.parent_color_packed    ~= nil then parent_color_packed    = slot.parent_color_packed    end
         if slot.bus_color_packed       ~= nil then bus_color_packed       = slot.bus_color_packed       end
         if slot.bus_use_panel_color    ~= nil then bus_use_panel_color    = slot.bus_use_panel_color    end
@@ -6077,6 +6290,25 @@ local function draw_presets_panel(ctx, groups_w, avail_h)
 
 end  -- draw_presets_panel
 
+
+local function sc_sort_key(entry)
+  local k = type(entry)=="table" and entry.key or entry
+  local n = tonumber
+  local t = k:match("^t:(%d+)$"); if t then return 1,n(t),0 end
+  local g = k:match("^g:(%d+)$"); if g then return 2,n(g),0 end
+  local b = k:match("^bus:(%d+)$"); if b then return 3,n(b),0 end
+  local gg,ss = k:match("^gs:(%d+):(%d+)$"); if gg then return 4,n(gg),n(ss) end
+  local bb,bs = k:match("^bs:(%d+):(%d+)$"); if bb then return 5,n(bb),n(bs) end
+  local gl = k:match("^gls:(%d+)$"); if gl then return 6,n(gl),0 end
+  return 7,0,0
+end
+local function sort_sc_dests(list)
+  table.sort(list, function(a,b)
+    local a1,a2,a3 = sc_sort_key(a); local b1,b2,b3 = sc_sort_key(b)
+    if a1~=b1 then return a1<b1 end; if a2~=b2 then return a2<b2 end; return a3<b3
+  end)
+end
+
 local function draw_track_panel(ctx, active_sc, num_gs, avail_h, btn_row_h)
   if r.ImGui_BeginChild(ctx, "right_scroll", 0, avail_h - btn_row_h) then
 
@@ -6097,8 +6329,111 @@ local function draw_track_panel(ctx, active_sc, num_gs, avail_h, btn_row_h)
   local num_gs         = #global_sends
   local active_sc      = build_active_send_cols()  -- {g, s} per dynamic send col
   local num_send_cols  = #active_sc
-  local fx_col_idx     = 6 + num_send_cols + num_gs  -- absolute table col index for FX
+  local fx_col_idx     = 7 + num_send_cols + num_gs  -- absolute table col index for FX
   local total_cols     = fx_col_idx + 1
+
+  -- ── Up/Down arrow navigation for Pan + send columns ─────────────────────────
+  -- col index: 5 = Pan, 6+ci = send column ci (1..num_send_cols)
+  -- Returns true if the send cell (column ci) is an editable/active field for the
+  -- given display_rows entry (mirrors the col_active / is_own_send logic used when
+  -- rendering each cell).
+  local function nav_cell_active(row, ci)
+    local sc = active_sc[ci]
+    if not sc then return false end
+    if row.type == "group" then
+      local is_own_send = (sc.type ~= "bus") and (sc.g == row.g)
+      return not is_own_send
+    elseif row.type == "track" then
+      local t2 = tracks[row.idx]
+      if not t2 then return false end
+      local is_pb = (row.idx > 1) and (tracks[row.idx-1] and tracks[row.idx-1].stereo or false)
+      if is_pb then return false end
+      if sc.type == "bus" then
+        if t2.group == NO_GROUP then return false end
+        local cur = t2.group; local routed_bus = 0
+        for _ = 1, NUM_GROUPS + 1 do
+          if not groups[cur] then break end
+          local rt = groups[cur].routes_to or 0
+          if rt < 0 then routed_bus = -rt; break end
+          if rt <= 0 then break end
+          cur = rt
+        end
+        if routed_bus == 0 then return false end
+        local bvis = {}; local bcur = routed_bus
+        while bcur > 0 and not bvis[bcur] do
+          bvis[bcur] = true
+          if bcur == sc.b then return true end
+          bcur = buses[bcur] and (buses[bcur].routes_to or 0) or 0
+        end
+        return false
+      else
+        return (t2.group ~= NO_GROUP) and (t2.group == sc.g or is_group_descendant(t2.group, sc.g))
+      end
+    end
+    return false
+  end
+  -- Find the next display_rows index in direction `dir` (-1/+1) starting from
+  -- `start_ri`, for column `col`. If `require_active` is true, skip rows where
+  -- this column's cell is not editable (Ctrl+Up/Down behavior).
+  local function nav_find_row(start_ri, dir, col, require_active)
+    local ri = start_ri
+    while true do
+      ri = ri + dir
+      if ri < 1 or ri > #display_rows then return nil end
+      local row = display_rows[ri]
+      if row.type == "track" or row.type == "group" then
+        if not require_active or col == 5 then return ri end
+        if nav_cell_active(row, col - 6) then return ri end
+      end
+    end
+  end
+  -- Call right before creating an InputText at (row_i, col): if this cell was
+  -- requested as the navigation target, focus it (and begin editing).
+  local function nav_maybe_focus(row_i, col)
+    if nav_focus_req and nav_focus_req.row_i == row_i and nav_focus_req.col == col then
+      r.ImGui_SetKeyboardFocusHere(ctx)
+      nav_focus_req = nil
+    end
+  end
+  -- Ordered list of navigable columns within a row: Pan (5), then each send col.
+  local nav_cols = {5}
+  for ci = 1, num_send_cols do nav_cols[#nav_cols+1] = 6 + ci end
+  -- Find the next navigable column in direction `dir` (-1/+1) from `start_col`
+  -- within the same row. If `require_active` is true, skip non-editable send cells.
+  local function nav_find_col(row, start_col, dir, require_active)
+    local pos = nil
+    for k, c in ipairs(nav_cols) do if c == start_col then pos = k; break end end
+    if not pos then return nil end
+    while true do
+      pos = pos + dir
+      if pos < 1 or pos > #nav_cols then return nil end
+      local c = nav_cols[pos]
+      if not require_active or c == 5 then return c end
+      if nav_cell_active(row, c - 6) then return c end
+    end
+  end
+  -- Call right after creating an InputText at (row_i, col): if it has focus,
+  -- check for Up/Down/Left/Right arrow presses and queue the next navigation target.
+  local function nav_check_arrows(row_i, col)
+    if not r.ImGui_IsItemFocused(ctx) then return end
+    local ctrl = r.ImGui_IsKeyDown(ctx, r.ImGui_Key_LeftCtrl())
+               or r.ImGui_IsKeyDown(ctx, r.ImGui_Key_RightCtrl())
+    local up    = r.ImGui_IsKeyPressed(ctx, r.ImGui_Key_UpArrow(), true)
+    local down  = r.ImGui_IsKeyPressed(ctx, r.ImGui_Key_DownArrow(), true)
+    local left  = r.ImGui_IsKeyPressed(ctx, r.ImGui_Key_LeftArrow(), true)
+    local right = r.ImGui_IsKeyPressed(ctx, r.ImGui_Key_RightArrow(), true)
+    if up or down then
+      local dir = up and -1 or 1
+      local target = nav_find_row(row_i, dir, col, ctrl)
+      if target then nav_focus_req = { row_i = target, col = col } end
+    elseif left or right then
+      local dir = left and -1 or 1
+      local row = display_rows[row_i]
+      local target_col = nav_find_col(row, col, dir, ctrl)
+      if target_col then nav_focus_req = { row_i = row_i, col = target_col } end
+    end
+  end
+
   -- Reverse touchpad horizontal scroll for the track table
   local _tracks_hwheel = 0
   if r.ImGui_IsWindowHovered and r.ImGui_IsWindowHovered(ctx) then
@@ -6111,7 +6446,7 @@ local function draw_track_panel(ctx, active_sc, num_gs, avail_h, btn_row_h)
       local cur_sx = r.ImGui_GetScrollX(ctx)
       r.ImGui_SetScrollX(ctx, cur_sx + _tracks_hwheel * 20)
     end
-    r.ImGui_TableSetupScrollFreeze(ctx, 6, 1)  -- freeze 6 left cols
+    r.ImGui_TableSetupScrollFreeze(ctx, 7, 1)  -- freeze 7 left cols (incl SC)
     -- Col 0 width scales with max hierarchy depth
     local max_depth = 0
     for _, row in ipairs(display_rows) do
@@ -6121,10 +6456,11 @@ local function draw_track_panel(ctx, active_sc, num_gs, avail_h, btn_row_h)
     local col0_w = col0_base * (1 + max_depth)
     r.ImGui_TableSetupColumn(ctx, "#",          r.ImGui_TableColumnFlags_WidthFixed(),   col0_w)
     r.ImGui_TableSetupColumn(ctx, "##selcol",   r.ImGui_TableColumnFlags_WidthFixed(),   22)
-    r.ImGui_TableSetupColumn(ctx, "Track Name", r.ImGui_TableColumnFlags_WidthFixed(), 160)
-    r.ImGui_TableSetupColumn(ctx, "Group",      r.ImGui_TableColumnFlags_WidthFixed(), 160)
+    r.ImGui_TableSetupColumn(ctx, "Name",       r.ImGui_TableColumnFlags_WidthFixed(), 120)
+    r.ImGui_TableSetupColumn(ctx, "Group",      r.ImGui_TableColumnFlags_WidthFixed(), 120)
     r.ImGui_TableSetupColumn(ctx, "\xE2\x97\x8E\xE2\x97\x8E", r.ImGui_TableColumnFlags_WidthFixed(),  22)
     r.ImGui_TableSetupColumn(ctx, "Pan",        r.ImGui_TableColumnFlags_WidthFixed(),  36)
+    r.ImGui_TableSetupColumn(ctx, "SC",         r.ImGui_TableColumnFlags_WidthFixed(),  28)
     for ci, sc in ipairs(active_sc) do
       local lbl
       if sc.type == "bus" then
@@ -6144,10 +6480,11 @@ local function draw_track_panel(ctx, active_sc, num_gs, avail_h, btn_row_h)
     local hdr_cols = {
       [0] = { label = "#",    center = true  },
       [1] = { label = "##selchk", center = false, is_checkbox = true },
-      [2] = { label = "Track Name", center = false },
+      [2] = { label = "Name",       center = false },
       [3] = { label = "Group", center = false },
       [4] = { label = "\xE2\x97\x8E\xE2\x97\x8E", center = false },
       [5] = { label = "Pan",  center = true  },
+      [6] = { label = "SC",   center = true  },
     }
     hdr_cols[fx_col_idx] = { label = "FX", center = false }
     for ci2, sc in ipairs(active_sc) do
@@ -6159,11 +6496,11 @@ local function draw_track_panel(ctx, active_sc, num_gs, avail_h, btn_row_h)
         lbl = groups[sc.g].sends[sc.s].name or ("S"..sc.s)
         hcol = 0x88FF88FF
       end
-      hdr_cols[5 + ci2] = { label = lbl, center = true, color = hcol }
+      hdr_cols[6 + ci2] = { label = lbl, center = true, color = hcol }
     end
     for gs_ci = 1, num_gs do
       local gs_lbl = global_sends[gs_ci].name ~= "" and global_sends[gs_ci].name or ("GS"..gs_ci)
-      hdr_cols[5 + num_send_cols + gs_ci] = { label = gs_lbl, center = true }
+      hdr_cols[6 + num_send_cols + gs_ci] = { label = gs_lbl, center = true, color = 0xBB88FFFF }
     end
     for ci = 0, fx_col_idx do
       r.ImGui_TableSetColumnIndex(ctx, ci)
@@ -6177,9 +6514,11 @@ local function draw_track_panel(ctx, active_sc, num_gs, avail_h, btn_row_h)
         -- Select-all checkbox in header
         local all_sel = #tracks > 0
         for _, t2 in ipairs(tracks) do if not t2.selected then all_sel = false; break end end
+        for g2=1,NUM_GROUPS do if not (groups[g2] and groups[g2].selected) then all_sel=false; break end end
         local cb_chg2, cb_new2 = r.ImGui_Checkbox(ctx, "##selhdr", all_sel)
         if cb_chg2 then
           for _, t2 in ipairs(tracks) do t2.selected = cb_new2 end
+          for g2=1,NUM_GROUPS do if groups[g2] then groups[g2].selected = cb_new2 end end
         end
       elseif hc then
         if hc.color then r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Text(), hc.color) end
@@ -6330,8 +6669,65 @@ local function draw_track_panel(ctx, active_sc, num_gs, avail_h, btn_row_h)
           r.ImGui_EndDragDropTarget(ctx)
         end
       end
-      -- Col 1: blank for group rows, checkbox for tracks
+      -- Col 1: selection checkbox for both group rows and track rows
       r.ImGui_TableSetColumnIndex(ctx, 1)
+      if is_group_row then
+        local grp_alt   = r.ImGui_IsKeyDown(ctx, r.ImGui_Key_LeftAlt())
+                       or r.ImGui_IsKeyDown(ctx, r.ImGui_Key_RightAlt())
+        local grp_ctrl  = r.ImGui_IsKeyDown(ctx, r.ImGui_Key_LeftCtrl())
+                       or r.ImGui_IsKeyDown(ctx, r.ImGui_Key_RightCtrl())
+        local grp_shift = r.ImGui_IsKeyDown(ctx, r.ImGui_Key_LeftShift())
+                       or r.ImGui_IsKeyDown(ctx, r.ImGui_Key_RightShift())
+        local grp_sel_chg, grp_sel_v = r.ImGui_Checkbox(ctx, "##gsel"..g_row,
+          groups[g_row].selected or false)
+        if grp_sel_chg then
+          push_undo()
+          if grp_alt then
+            -- Alt: exclusively select this group, deselect everything else
+            for _, st in ipairs(tracks) do st.selected = false end
+            for g2=1,NUM_GROUPS do if groups[g2] then groups[g2].selected=false end end
+            groups[g_row].selected = true
+          elseif grp_ctrl then
+            -- Ctrl: deselect all, select only tracks in subtree (not the group itself)
+            for _, st in ipairs(tracks) do st.selected = false end
+            for g2=1,NUM_GROUPS do if groups[g2] then groups[g2].selected=false end end
+            local grp_depth_r = nil
+            local in_sub = false
+            for _, row in ipairs(display_rows) do
+              if row.type=="group" and row.g==g_row then
+                grp_depth_r = row.depth; in_sub = true
+              elseif in_sub then
+                if (row.depth or 0) <= grp_depth_r then break end
+                if row.type=="track" and tracks[row.idx] then
+                  tracks[row.idx].selected = true
+                end
+                -- groups in subtree are NOT selected - only tracks
+              end
+            end
+          elseif grp_shift then
+            -- Shift: range-select from last clicked row
+            if last_clicked and last_clicked ~= _row_i then
+              local lo = math.min(last_clicked, _row_i)
+              local hi = math.max(last_clicked, _row_i)
+              for ri = lo, hi do
+                local r2 = display_rows[ri]
+                if r2 then
+                  if r2.type=="track" and tracks[r2.idx] then
+                    tracks[r2.idx].selected = grp_sel_v
+                  elseif r2.type=="group" and groups[r2.g] then
+                    groups[r2.g].selected = grp_sel_v
+                  end
+                end
+              end
+            else
+              groups[g_row].selected = grp_sel_v
+            end
+          else
+            groups[g_row].selected = grp_sel_v
+          end
+          last_clicked = _row_i
+        end
+      end
       if not is_group_row then
       if is_stereo_top or is_stereo_bottom then
         r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Border(), 0xFFFFFFAAFF)
@@ -6350,9 +6746,10 @@ local function draw_track_panel(ctx, active_sc, num_gs, avail_h, btn_row_h)
         local ctrl_down  = r.ImGui_IsKeyDown(ctx, r.ImGui_Key_LeftCtrl())
                         or r.ImGui_IsKeyDown(ctx, r.ImGui_Key_RightCtrl())
         if ctrl_down then
-          -- Ctrl+click: deselect all, then select only tracks in same group
+          -- Ctrl+click: deselect all tracks+groups, select only tracks in same group
           local grp = t.group
           for _, st in ipairs(tracks) do st.selected = false end
+          for g2=1,NUM_GROUPS do if groups[g2] then groups[g2].selected=false end end
           if grp ~= NO_GROUP then
             for _, st in ipairs(tracks) do
               if st.group == grp then st.selected = true end
@@ -6360,23 +6757,35 @@ local function draw_track_panel(ctx, active_sc, num_gs, avail_h, btn_row_h)
           else
             t.selected = true
           end
+          last_clicked = _row_i
         elseif alt_down then
-          -- Alt+click: deselect all, select only this track
+          -- Alt+click: deselect all tracks+groups, select only this track
           for _, st in ipairs(tracks) do st.selected = false end
+          for g2=1,NUM_GROUPS do if groups[g2] then groups[g2].selected=false end end
           t.selected = true
+          last_clicked = _row_i
         elseif shift_down then
-          -- Shift+click: select range from last clicked
-          if last_clicked and last_clicked ~= i then
-            local lo = math.min(last_clicked, i)
-            local hi = math.max(last_clicked, i)
-            for j = lo, hi do tracks[j].selected = new_sel end
+          -- Shift+click: range by display_rows position
+          if last_clicked and last_clicked ~= _row_i then
+            local lo = math.min(last_clicked, _row_i)
+            local hi = math.max(last_clicked, _row_i)
+            for ri = lo, hi do
+              local r2 = display_rows[ri]
+              if r2 then
+                if r2.type == "track" and tracks[r2.idx] then
+                  tracks[r2.idx].selected = new_sel
+                elseif r2.type == "group" and groups[r2.g] then
+                  groups[r2.g].selected = new_sel
+                end
+              end
+            end
           else
             t.selected = new_sel
           end
         else
           t.selected = new_sel
         end
-        last_clicked = i
+        last_clicked = _row_i
       end
       end  -- end if not is_group_row for col1
 
@@ -6486,7 +6895,9 @@ local function draw_track_panel(ctx, active_sc, num_gs, avail_h, btn_row_h)
         local gpad_x = math.max(2, math.floor((gfield_w-gtext_w)/2))
         r.ImGui_PushStyleVar(ctx, r.ImGui_StyleVar_FramePadding(), gpad_x, 3)
         if not gpan_valid then r.ImGui_PushStyleColor(ctx, r.ImGui_Col_FrameBg(), 0x6e1a1aFF) end
+        nav_maybe_focus(_row_i, 5)
         local gpc, gpv = r.ImGui_InputText(ctx, "##gpan"..g_row, gpan, r.ImGui_InputTextFlags_AutoSelectAll())
+        nav_check_arrows(_row_i, 5)
         if not gpan_valid then r.ImGui_PopStyleColor(ctx) end
         r.ImGui_PopStyleVar(ctx)
         if gpc then push_undo_debounced(); groups[g_row].pan_str = gpv == "" and "C" or gpv end
@@ -6495,8 +6906,10 @@ local function draw_track_panel(ctx, active_sc, num_gs, avail_h, btn_row_h)
         r.ImGui_PushStyleVar(ctx, r.ImGui_StyleVar_FramePadding(), 14, 3)
         r.ImGui_PushStyleColor(ctx, r.ImGui_Col_FrameBg(),     0x2a2a2aFF)
         r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Text(),        0x555555FF)
+        nav_maybe_focus(_row_i, 5)
         r.ImGui_InputText(ctx, "##pan"..i, "",
           r.ImGui_InputTextFlags_ReadOnly())
+        nav_check_arrows(_row_i, 5)
         r.ImGui_PopStyleColor(ctx, 2)
         r.ImGui_PopStyleVar(ctx)
       else
@@ -6512,8 +6925,10 @@ local function draw_track_panel(ctx, active_sc, num_gs, avail_h, btn_row_h)
         if not pan_valid then
           r.ImGui_PushStyleColor(ctx, r.ImGui_Col_FrameBg(), 0x6e1a1aFF)
         end
+        nav_maybe_focus(_row_i, 5)
         local pan_changed, pan_val = r.ImGui_InputText(ctx, "##pan"..i, pan_str_cur,
           r.ImGui_InputTextFlags_AutoSelectAll())
+        nav_check_arrows(_row_i, 5)
         if not pan_valid then r.ImGui_PopStyleColor(ctx, 1) end
         r.ImGui_PopStyleVar(ctx)
         if r.ImGui_IsItemFocused(ctx) then
@@ -6541,10 +6956,56 @@ local function draw_track_panel(ctx, active_sc, num_gs, avail_h, btn_row_h)
         end
       end  -- pan col5
 
+
+      -- Col 6: SC (sidechain) button
+      r.ImGui_TableSetColumnIndex(ctx, 6)
+      do
+        local sc_list
+        if is_group_row then
+          sc_list = groups[g_row] and groups[g_row].sc_dests or nil
+        else
+          sc_list = t and t.sc_dests or nil
+        end
+        local has_sc = sc_list and #sc_list > 0
+        if has_sc then
+          r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Button(),        0x1a4a1aFF)
+          r.ImGui_PushStyleColor(ctx, r.ImGui_Col_ButtonHovered(), 0x2a6a2aFF)
+          r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Text(),          0xAAFFAAFF)
+        else
+          r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Button(),        0x2a2a2aFF)
+          r.ImGui_PushStyleColor(ctx, r.ImGui_Col_ButtonHovered(), 0x3a3a3aFF)
+          r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Text(),          0x666666FF)
+        end
+        if r.ImGui_Button(ctx, "SC##scbtn".._row_i, -1, 0) then
+          local sc_ctrl = r.ImGui_IsKeyDown(ctx, r.ImGui_Key_LeftCtrl())
+                       or r.ImGui_IsKeyDown(ctx, r.ImGui_Key_RightCtrl())
+          local prim_ig = is_group_row; local prim_idx = is_group_row and g_row or i
+          local sc_tgts = {{ is_group=prim_ig, idx=prim_idx }}
+          if sc_ctrl then
+            for ti2, tr2 in ipairs(tracks) do
+              if tr2.selected and not (not prim_ig and ti2==prim_idx) then
+                sc_tgts[#sc_tgts+1] = { is_group=false, idx=ti2 }
+              end
+            end
+            for gi2 = 1, NUM_GROUPS do
+              if groups[gi2] and groups[gi2].selected and not (prim_ig and gi2==prim_idx) then
+                sc_tgts[#sc_tgts+1] = { is_group=true, idx=gi2 }
+              end
+            end
+          end
+          pending_sc_popup = {
+            is_group=prim_ig, idx=prim_idx, row_i=_row_i,
+            multi=sc_ctrl and #sc_tgts>1, targets=sc_tgts,
+          }
+          sc_search_buf = ""
+          r.ImGui_OpenPopup(ctx, "##sc_popup")
+        end
+        r.ImGui_PopStyleColor(ctx, 3)
+      end
       -- Dynamic send dB fields (one per active_sc entry)
       local is_stereo_pair_bottom = (not is_group_row) and (i and i > 1) and (tracks[i-1] and tracks[i-1].stereo or false)
       for ci, sc in ipairs(active_sc) do
-        r.ImGui_TableSetColumnIndex(ctx, 5 + ci)
+        r.ImGui_TableSetColumnIndex(ctx, 6 + ci)
         r.ImGui_SetNextItemWidth(ctx, -1)
         if is_group_row then
           -- Group row: editable send field writing to groups[g_row].folder_sends
@@ -6561,9 +7022,11 @@ local function draw_track_panel(ctx, active_sc, num_gs, avail_h, btn_row_h)
           r.ImGui_PushStyleColor(ctx, r.ImGui_Col_FrameBg(), send_col)
           if send_text_col then r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Text(), send_text_col) end
           if not gsend_valid and not is_own_send then r.ImGui_PushStyleColor(ctx, r.ImGui_Col_FrameBg(), 0x6e1a1aFF) end
+          nav_maybe_focus(_row_i, 6 + ci)
           local gsc2, gsv2 = r.ImGui_InputText(ctx, "##gfsend"..g_row.."_"..ci,
             is_own_send and "" or gsend_cur,
             is_own_send and r.ImGui_InputTextFlags_ReadOnly() or r.ImGui_InputTextFlags_AutoSelectAll())
+          nav_check_arrows(_row_i, 6 + ci)
           if not gsend_valid and not is_own_send then r.ImGui_PopStyleColor(ctx) end
           if send_text_col then r.ImGui_PopStyleColor(ctx) end
           r.ImGui_PopStyleColor(ctx)  -- send_col
@@ -6607,7 +7070,9 @@ local function draw_track_panel(ctx, active_sc, num_gs, avail_h, btn_row_h)
         if not col_active or is_stereo_pair_bottom then
           r.ImGui_PushStyleColor(ctx, r.ImGui_Col_FrameBg(), 0x1e1e1eFF)
           r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Text(),    0x333333FF)
+          nav_maybe_focus(_row_i, 6 + ci)
           r.ImGui_InputText(ctx, "##send"..i.."_"..ci, "", r.ImGui_InputTextFlags_ReadOnly())
+          nav_check_arrows(_row_i, 6 + ci)
           r.ImGui_PopStyleColor(ctx, 2)
         else
           if not send_track_buf[i] then send_track_buf[i] = {} end
@@ -6617,8 +7082,10 @@ local function draw_track_panel(ctx, active_sc, num_gs, avail_h, btn_row_h)
           local pad_x2 = math.max(2, math.floor((45 - #send_str_cur * 7) / 2))
           r.ImGui_PushStyleVar(ctx, r.ImGui_StyleVar_FramePadding(), pad_x2, 3)
           if not send_valid then r.ImGui_PushStyleColor(ctx, r.ImGui_Col_FrameBg(), 0x6e1a1aFF) end
+          nav_maybe_focus(_row_i, 6 + ci)
           local send_changed, send_val = r.ImGui_InputText(ctx, "##send"..i.."_"..ci,
             send_str_cur, r.ImGui_InputTextFlags_AutoSelectAll())
+          nav_check_arrows(_row_i, 6 + ci)
           if not send_valid then r.ImGui_PopStyleColor(ctx, 1) end
           r.ImGui_PopStyleVar(ctx)
           if r.ImGui_IsItemFocused(ctx) then
@@ -6674,7 +7141,7 @@ local function draw_track_panel(ctx, active_sc, num_gs, avail_h, btn_row_h)
 
       -- Global send dB fields (editable for group rows too)
       for gs = 1, num_gs do
-        r.ImGui_TableSetColumnIndex(ctx, 5 + num_send_cols + gs)
+        r.ImGui_TableSetColumnIndex(ctx, 6 + num_send_cols + gs)
         r.ImGui_SetNextItemWidth(ctx, -1)
         if is_stereo_pair_bottom then
           r.ImGui_PushStyleColor(ctx, r.ImGui_Col_FrameBg(), 0x1e1e1eFF)
@@ -6777,6 +7244,303 @@ local function draw_track_panel(ctx, active_sc, num_gs, avail_h, btn_row_h)
 
     ::continue::
     end  -- display_rows loop
+    -- ── SC (sidechain) destination popup ─────────────────────────────────────
+    if pending_sc_popup then
+      r.ImGui_SetNextWindowSizeConstraints(ctx, 260, 0, 600, 450)
+      if r.ImGui_BeginPopup(ctx, "##sc_popup") then
+        local psc      = pending_sc_popup
+        r.ImGui_Dummy(ctx, 244, 0)  -- enforce min content width (260 - ~16 padding) from frame 1
+        local sc_list
+        if psc.is_group then
+          if not groups[psc.idx].sc_dests then groups[psc.idx].sc_dests = {} end
+          sc_list = groups[psc.idx].sc_dests
+        else
+          if not tracks[psc.idx].sc_dests then tracks[psc.idx].sc_dests = {} end
+          sc_list = tracks[psc.idx].sc_dests
+        end
+        local src_name = psc.is_group and (groups[psc.idx] and groups[psc.idx].name or "Group")
+                                      or  (tracks[psc.idx] and tracks[psc.idx].name or "Track")
+        r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Text(), 0xAAFFAAFF)
+        if psc.multi and psc.targets and #psc.targets > 1 then
+          local hnames = {}
+          for _, tgt in ipairs(psc.targets) do
+            local nm = tgt.is_group and (groups[tgt.idx] and groups[tgt.idx].name or "?")
+                     or (tracks[tgt.idx] and tracks[tgt.idx].name or "?")
+            hnames[#hnames+1] = nm
+          end
+          r.ImGui_TextWrapped(ctx, "SC ["..#psc.targets.."]: "..table.concat(hnames, ", "))
+        else
+          r.ImGui_Text(ctx, "SC: "..src_name)
+        end
+        r.ImGui_PopStyleColor(ctx)
+        r.ImGui_Separator(ctx)
+
+        -- Multi-edit propagation helper
+        local function sc_propagate(fn)
+          if not psc.multi then return end
+          for _, tgt in ipairs(psc.targets or {}) do
+            if tgt.is_group ~= psc.is_group or tgt.idx ~= psc.idx then
+              local tl = tgt.is_group and (groups[tgt.idx] and groups[tgt.idx].sc_dests)
+                       or (tracks[tgt.idx] and tracks[tgt.idx].sc_dests)
+              if tl then fn(tl) end
+            end
+          end
+        end
+        -- Helper: label for a dest key
+        local function sc_key_label(k)
+          local ti = k:match("^t:(%d+)$")
+          if ti then return "Track: "..(tracks[tonumber(ti)] and tracks[tonumber(ti)].name or "?") end
+          local gi = k:match("^g:(%d+)$")
+          if gi then return "Group: "..(groups[tonumber(gi)] and groups[tonumber(gi)].name or "?") end
+          local bi = k:match("^bus:(%d+)$")
+          if bi then return "Bus: "..(buses[tonumber(bi)] and buses[tonumber(bi)].name or "?") end
+          local gg,ss = k:match("^gs:(%d+):(%d+)$")
+          if gg then
+            local gn = groups[tonumber(gg)] and groups[tonumber(gg)].name or ("G"..gg)
+            local sn = groups[tonumber(gg)] and groups[tonumber(gg)].sends[tonumber(ss)] and groups[tonumber(gg)].sends[tonumber(ss)].name
+            return "GrpSend: "..(sn ~= "" and sn or gn..".S"..ss)
+          end
+          local bb,bs = k:match("^bs:(%d+):(%d+)$")
+          if bb then
+            local bn = buses[tonumber(bb)] and buses[tonumber(bb)].name or ("Bus"..bb)
+            local bsn = buses[tonumber(bb)] and buses[tonumber(bb)].sends[tonumber(bs)] and buses[tonumber(bb)].sends[tonumber(bs)].name
+            return "BusSend: "..(bsn ~= "" and bsn or bn..".S"..bs)
+          end
+          local gls = k:match("^gls:(%d+)$")
+          if gls then return "Global: "..(global_sends[tonumber(gls)] and global_sends[tonumber(gls)].name or ("GS"..gls)) end
+          return k
+        end
+
+        local function has_key(list, k)
+          for _, v in ipairs(list) do
+            if type(v)=="table" and v.key==k then return true end
+            if type(v)=="string" and v==k    then return true end
+          end
+          return false
+        end
+
+        -- Search filter
+        r.ImGui_SetNextItemWidth(ctx, -1)
+        if not pending_sc_popup.focused then
+          r.ImGui_SetKeyboardFocusHere(ctx)
+          pending_sc_popup.focused = true
+        end
+        local sc_sch, sc_sv = r.ImGui_InputText(ctx, "##scsearch", sc_search_buf,
+          r.ImGui_InputTextFlags_AutoSelectAll())
+        if sc_sch then sc_search_buf = sc_sv end
+        local sc_filter = sc_search_buf:lower()
+        r.ImGui_Separator(ctx)
+
+        -- Active destinations (deletable)
+        if #sc_list > 0 then
+          r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Text(), 0x888888FF)
+          r.ImGui_Text(ctx, "Active:")
+          r.ImGui_PopStyleColor(ctx)
+          local to_remove = nil
+          for ki, entry in ipairs(sc_list) do
+            local k = type(entry)=="table" and entry.key or entry
+            local dest_col
+            if     k:match("^t:")   then dest_col = 0xFFFFFFFF
+            elseif k:match("^g:")   then dest_col = 0x88FF88FF
+            elseif k:match("^gs:")  then dest_col = 0x88FF88FF
+            elseif k:match("^bus:") then dest_col = 0xFF8888FF
+            elseif k:match("^bs:")  then dest_col = 0xFF8888FF
+            elseif k:match("^gls:") then dest_col = 0xBB88FFFF
+            else dest_col = 0xCCCCCCFF end
+            -- Line 1: name
+            r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Text(), dest_col)
+            r.ImGui_Text(ctx, sc_key_label(k))
+            r.ImGui_PopStyleColor(ctx)
+            -- Line 2: vol / pan / mute / phase / mono / delete
+            if type(entry) == "table" then
+              r.ImGui_PushStyleVar(ctx, r.ImGui_StyleVar_FramePadding(), 3, 1)
+              r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Text(), 0x888888FF)
+              r.ImGui_Text(ctx, "Vol")
+              r.ImGui_PopStyleColor(ctx)
+              r.ImGui_SameLine(ctx, 0, 4)
+              r.ImGui_SetNextItemWidth(ctx, 35)
+              local _vtw = r.ImGui_CalcTextSize(ctx, entry.vol or "0")
+              r.ImGui_PushStyleVar(ctx, r.ImGui_StyleVar_FramePadding(), math.max(2, math.floor((35-_vtw)/2)), 1)
+              local vol_valid = (entry.vol=="") or (parse_db(entry.vol or "0") ~= nil)
+              if not vol_valid then r.ImGui_PushStyleColor(ctx, r.ImGui_Col_FrameBg(), 0x6e1a1aFF) end
+              local vc,vv = r.ImGui_InputText(ctx,"##scvol"..ki, entry.vol or "0", r.ImGui_InputTextFlags_AutoSelectAll())
+              if not vol_valid then r.ImGui_PopStyleColor(ctx) end
+              if vc then push_undo_debounced(); entry.vol = vv
+                sc_propagate(function(tl) for _,e in ipairs(tl) do if type(e)=="table" and e.key==k then e.vol=vv end end end)
+              end
+              r.ImGui_PopStyleVar(ctx)
+              r.ImGui_SameLine(ctx, 0, 8)
+              r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Text(), 0x888888FF)
+              r.ImGui_Text(ctx, "Pan")
+              r.ImGui_PopStyleColor(ctx)
+              r.ImGui_SameLine(ctx, 0, 4)
+              r.ImGui_SetNextItemWidth(ctx, 30)
+              local _ptw = r.ImGui_CalcTextSize(ctx, entry.pan or "C")
+              r.ImGui_PushStyleVar(ctx, r.ImGui_StyleVar_FramePadding(), math.max(2, math.floor((30-_ptw)/2)), 1)
+              local pan_valid = (entry.pan=="") or (parse_pan(entry.pan or "C") ~= nil)
+              if not pan_valid then r.ImGui_PushStyleColor(ctx, r.ImGui_Col_FrameBg(), 0x6e1a1aFF) end
+              local pc,pv = r.ImGui_InputText(ctx,"##scpan"..ki, entry.pan or "C", r.ImGui_InputTextFlags_AutoSelectAll())
+              if not pan_valid then r.ImGui_PopStyleColor(ctx) end
+              if pc then push_undo_debounced(); entry.pan = pv
+                sc_propagate(function(tl) for _,e in ipairs(tl) do if type(e)=="table" and e.key==k then e.pan=pv end end end)
+              end
+              r.ImGui_PopStyleVar(ctx)
+              r.ImGui_SameLine(ctx, 0, 8)
+              local is_mute  = entry.mute  or false
+              local is_phase = entry.phase or false
+              local is_mono  = entry.mono  or false
+              -- Mute: grey off, red on
+              r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Button(), is_mute and 0x8a2222FF or 0x2a2a2aFF)
+              r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Text(),   is_mute and 0xFF8888FF or 0x888888FF)
+              if r.ImGui_Button(ctx, "M##scmt"..ki, 20, 0) then push_undo(); entry.mute = not is_mute
+                sc_propagate(function(tl) for _,e in ipairs(tl) do if type(e)=="table" and e.key==k then e.mute=not is_mute end end end)
+              end
+              r.ImGui_PopStyleColor(ctx, 2)
+              r.ImGui_SameLine(ctx, 0, 2)
+              -- Phase/Polarity: grey off, blue on
+              r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Button(), is_phase and 0x22448aFF or 0x2a2a2aFF)
+              r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Text(),   is_phase and 0x88AAFFFF or 0x888888FF)
+              if r.ImGui_Button(ctx, "\xC3\x98##scph"..ki, 20, 0) then push_undo(); entry.phase = not is_phase
+                sc_propagate(function(tl) for _,e in ipairs(tl) do if type(e)=="table" and e.key==k then e.phase=not is_phase end end end)
+              end
+              r.ImGui_PopStyleColor(ctx, 2)
+              r.ImGui_SameLine(ctx, 0, 2)
+              -- Mono: grey off, orange on
+              r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Button(), is_mono and 0x8a5522FF or 0x2a2a2aFF)
+              r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Text(),   is_mono and 0xFFAA66FF or 0x888888FF)
+              if r.ImGui_Button(ctx, "M/S##scms"..ki, 28, 0) then push_undo(); entry.mono = not is_mono
+                sc_propagate(function(tl) for _,e in ipairs(tl) do if type(e)=="table" and e.key==k then e.mono=not is_mono end end end)
+              end
+              r.ImGui_PopStyleColor(ctx, 2)
+              r.ImGui_SameLine(ctx, 0, 6)
+              r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Button(),        0x5a1a1aFF)
+              r.ImGui_PushStyleColor(ctx, r.ImGui_Col_ButtonHovered(), 0x8a2a2aFF)
+              if r.ImGui_Button(ctx, "x##scdel"..ki, 18, 0) then to_remove = ki end
+              r.ImGui_PopStyleColor(ctx, 2)
+              r.ImGui_PopStyleVar(ctx)
+            else
+              r.ImGui_SameLine(ctx, 0, 6)
+              r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Button(),        0x5a1a1aFF)
+              r.ImGui_PushStyleColor(ctx, r.ImGui_Col_ButtonHovered(), 0x8a2a2aFF)
+              if r.ImGui_Button(ctx, "x##scdel"..ki, 18, 0) then to_remove = ki end
+              r.ImGui_PopStyleColor(ctx, 2)
+            end
+          end
+          if to_remove then
+            local rk = type(sc_list[to_remove])=="table" and sc_list[to_remove].key or sc_list[to_remove]
+            push_undo()
+            table.remove(sc_list, to_remove)
+            sc_propagate(function(tl)
+              for ri=#tl,1,-1 do
+                local ek=type(tl[ri])=="table" and tl[ri].key or tl[ri]
+                if ek==rk then table.remove(tl,ri) end
+              end
+            end)
+          end
+          r.ImGui_Separator(ctx)
+        end
+
+        -- Add new destinations
+        r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Text(), 0x888888FF)
+        r.ImGui_Text(ctx, "Add:")
+        r.ImGui_PopStyleColor(ctx)
+
+        local function sc_add_btn(label, key)
+          if has_key(sc_list, key) then return end
+          if sc_filter ~= "" and not label:lower():find(sc_filter, 1, true) then return end
+          if r.ImGui_Selectable(ctx, "      "..label.."##scadd_"..key, false, 1) then
+            push_undo()
+            sc_list[#sc_list+1] = { key=key, vol="0", pan="C", mute=false, phase=false, mono=false }
+            sort_sc_dests(sc_list)
+            sc_propagate(function(tl)
+              if not has_key(tl, key) then
+                tl[#tl+1] = { key=key, vol="0", pan="C", mute=false, phase=false, mono=false }
+                sort_sc_dests(tl)
+              end
+            end)
+          end
+        end
+
+        -- Tracks
+        r.ImGui_Text(ctx, " Tracks")
+        for ti2, tr2 in ipairs(tracks) do
+          sc_add_btn(tr2.name, "t:"..ti2)
+        end
+        -- Groups
+        r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Text(), 0x88FF88FF)
+        r.ImGui_Text(ctx, " Groups")
+        r.ImGui_PopStyleColor(ctx)
+        for g2 = 1, NUM_GROUPS do
+          if groups[g2] then sc_add_btn(groups[g2].name, "g:"..g2) end
+        end
+        -- Buses
+        if NUM_BUSES > 0 then
+          r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Text(), 0xFF8888FF)
+          r.ImGui_Text(ctx, " Buses")
+          r.ImGui_PopStyleColor(ctx)
+          for b2 = 1, NUM_BUSES do
+            if buses[b2] then sc_add_btn(buses[b2].name, "bus:"..b2) end
+          end
+        end
+        -- Group sends
+        local has_grp_sends = false
+        for g2 = 1, NUM_GROUPS do
+          if groups[g2] and #(groups[g2].sends or {}) > 0 then has_grp_sends = true; break end
+        end
+        if has_grp_sends then
+          r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Text(), 0x88FF88FF)
+          r.ImGui_Text(ctx, " Group Sends")
+          r.ImGui_PopStyleColor(ctx)
+          for g2 = 1, NUM_GROUPS do
+            if groups[g2] then
+              for s2 = 1, #(groups[g2].sends or {}) do
+                local sn = groups[g2].sends[s2].name
+                if sn and sn ~= "" then
+                  sc_add_btn(groups[g2].name.." / "..sn, "gs:"..g2..":"..s2)
+                end
+              end
+            end
+          end
+        end
+        -- Bus sends
+        local has_bus_sends = false
+        for b2 = 1, NUM_BUSES do
+          if buses[b2] and #(buses[b2].sends or {}) > 0 then has_bus_sends = true; break end
+        end
+        if has_bus_sends then
+          r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Text(), 0xFF8888FF)
+          r.ImGui_Text(ctx, " Bus Sends")
+          r.ImGui_PopStyleColor(ctx)
+          for b2 = 1, NUM_BUSES do
+            if buses[b2] then
+              for s2 = 1, #(buses[b2].sends or {}) do
+                local bsn = buses[b2].sends[s2].name
+                if bsn and bsn ~= "" then
+                  sc_add_btn(buses[b2].name.." / "..bsn, "bs:"..b2..":"..s2)
+                end
+              end
+            end
+          end
+        end
+        -- Global sends
+        if #global_sends > 0 then
+          r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Text(), 0xBB88FFFF)
+          r.ImGui_Text(ctx, " Global Sends")
+          r.ImGui_PopStyleColor(ctx)
+          for s2 = 1, #global_sends do
+            local gln = global_sends[s2].name
+            if gln and gln ~= "" then
+              sc_add_btn(gln, "gls:"..s2)
+            end
+          end
+        end
+
+        r.ImGui_EndPopup(ctx)
+      else
+        pending_sc_popup = nil
+      end
+    end
+
 
     -- ── Depth adjust popup (shown after drag-drop) ─────────────────────────
     if pending_depth_adjust then
@@ -6902,7 +7666,7 @@ local function draw_track_buttons(ctx, active_sc, num_gs, avail_h)
         if val and val ~= "" then
           push_undo()
           apply_all_sends_value(val, sc)
-          apply_all_group_row_sends(val)
+          apply_all_group_row_sends(val, sc)
         end
       end,
     }
@@ -6916,7 +7680,7 @@ local function draw_track_buttons(ctx, active_sc, num_gs, avail_h)
       function(sc)
         push_undo()
         apply_all_sends_value("", sc)
-        apply_all_group_row_sends("")
+        apply_all_group_row_sends("", sc)
       end, true)
   end
   r.ImGui_PopStyleColor(ctx, 2)
@@ -7048,36 +7812,105 @@ local function draw_track_buttons(ctx, active_sc, num_gs, avail_h)
     r.ImGui_Text(ctx, mp and mp.msg or "")
     r.ImGui_Spacing(ctx)
     if mp and mp.show_send_filter then
-      -- Tracks row
-      r.ImGui_Text(ctx, "Tracks")
-      r.ImGui_SameLine(ctx,0,8)
-      r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Text(), 0x88FF88FF)
-      local c1,v1=r.ImGui_Checkbox(ctx,"grpSends##sflt_g",sflt_grp)
-      if c1 then sflt_grp=v1 end
-      r.ImGui_PopStyleColor(ctx)
-      r.ImGui_SameLine(ctx,0,8)
-      r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Text(), 0xFF8888FF)
-      local c2,v2=r.ImGui_Checkbox(ctx,"busSends##sflt_b",sflt_bus)
-      if c2 then sflt_bus=v2 end
-      r.ImGui_PopStyleColor(ctx)
-      r.ImGui_SameLine(ctx,0,8)
-      local c3,v3=r.ImGui_Checkbox(ctx,"globSends##sflt_gs",sflt_glob)
-      if c3 then sflt_glob=v3 end
-      -- Groups row
-      r.ImGui_Text(ctx, "Groups")
-      r.ImGui_SameLine(ctx,0,8)
-      r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Text(), 0x88FF88FF)
-      local c4,v4=r.ImGui_Checkbox(ctx,"grpSends##sflg_g",sflg_grp)
-      if c4 then sflg_grp=v4 end
-      r.ImGui_PopStyleColor(ctx)
-      r.ImGui_SameLine(ctx,0,8)
-      r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Text(), 0xFF8888FF)
-      local c5,v5=r.ImGui_Checkbox(ctx,"busSends##sflg_b",sflg_bus)
-      if c5 then sflg_bus=v5 end
-      r.ImGui_PopStyleColor(ctx)
-      r.ImGui_SameLine(ctx,0,8)
-      local c6,v6=r.ImGui_Checkbox(ctx,"globSends##sflg_gs",sflg_glob)
-      if c6 then sflg_glob=v6 end
+      local sa_cols = {}
+      for _, sc in ipairs(active_sc_cache) do
+        local k = sa_key(sc)
+        local lbl = sc.type=="bus"
+          and ((buses[sc.b].sends[sc.s].name ~= "" and buses[sc.b].sends[sc.s].name) or ("B"..sc.b.."S"..sc.s))
+          or  ((groups[sc.g].sends[sc.s].name ~= "" and groups[sc.g].sends[sc.s].name) or ("G"..sc.g.."S"..sc.s))
+        local col = sc.type=="bus" and 0xFF8888FF or 0x88FF88FF
+        sa_cols[#sa_cols+1] = { key=k, label=lbl, color=col }
+      end
+      for n = 1, #global_sends do
+        local lbl = global_sends[n].name ~= "" and global_sends[n].name or ("GS"..n)
+        sa_cols[#sa_cols+1] = { key="gs"..n, label=lbl, color=0xBB88FFFF }
+      end
+      if #sa_cols > 0 then
+        local tfl = r.ImGui_TableFlags_BordersOuter() | r.ImGui_TableFlags_BordersInnerV()
+                  | r.ImGui_TableFlags_BordersInnerH() | r.ImGui_TableFlags_ScrollX()
+        if r.ImGui_BeginTable(ctx, "##safilter", #sa_cols+1, tfl, 0, 80) then
+          r.ImGui_TableSetupScrollFreeze(ctx, 1, 1)
+          r.ImGui_TableSetupColumn(ctx, "", r.ImGui_TableColumnFlags_WidthFixed(), 52)
+          for _, col in ipairs(sa_cols) do
+            r.ImGui_TableSetupColumn(ctx, col.label, r.ImGui_TableColumnFlags_WidthFixed(), 52)
+          end
+          r.ImGui_TableNextRow(ctx, r.ImGui_TableRowFlags_Headers())
+          r.ImGui_TableSetColumnIndex(ctx, 0)
+          r.ImGui_TableHeader(ctx, "##sah0")
+          for ci, col in ipairs(sa_cols) do
+            r.ImGui_TableSetColumnIndex(ctx, ci)
+            r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Text(), col.color)
+            r.ImGui_TableHeader(ctx, col.label.."##sah"..ci)
+            r.ImGui_PopStyleColor(ctx)
+          end
+          r.ImGui_TableNextRow(ctx)
+          r.ImGui_TableSetColumnIndex(ctx, 0)
+          r.ImGui_Text(ctx, "Tracks")
+          for ci, col in ipairs(sa_cols) do
+            r.ImGui_TableSetColumnIndex(ctx, ci)
+            local cur = sa_track[col.key] ~= false
+            local chg, nv = r.ImGui_Checkbox(ctx, "##sat"..ci, cur)
+            if chg then sa_track[col.key] = nv end
+          end
+          r.ImGui_TableNextRow(ctx)
+          r.ImGui_TableSetColumnIndex(ctx, 0)
+          r.ImGui_Text(ctx, "Groups")
+          for ci, col in ipairs(sa_cols) do
+            r.ImGui_TableSetColumnIndex(ctx, ci)
+            local cur = sa_group[col.key] ~= false
+            local chg, nv = r.ImGui_Checkbox(ctx, "##sag"..ci, cur)
+            if chg then sa_group[col.key] = nv end
+          end
+          r.ImGui_EndTable(ctx)
+        end
+        -- Helper: build select buttons for one sa table
+        local function sa_sel_row(tbl, row_id)
+          local ctrl = r.ImGui_IsKeyDown(ctx, r.ImGui_Key_LeftCtrl())
+                     or r.ImGui_IsKeyDown(ctx, r.ImGui_Key_RightCtrl())
+          if r.ImGui_Button(ctx, "All##sa_all"..row_id, 0, 0) then
+            for _, col in ipairs(sa_cols) do tbl[col.key] = nil end
+          end
+          r.ImGui_SameLine(ctx, 0, 4)
+          if r.ImGui_Button(ctx, "None##sa_none"..row_id, 0, 0) then
+            for _, col in ipairs(sa_cols) do tbl[col.key] = false end
+          end
+          r.ImGui_SameLine(ctx, 0, 4)
+          r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Text(), 0x88FF88FF)
+          if r.ImGui_Button(ctx, "Group##sa_grp"..row_id, 0, 0) then
+            if not ctrl then for _, col in ipairs(sa_cols) do tbl[col.key]=false end end
+            for _, sc in ipairs(active_sc_cache) do
+              if sc.type ~= "bus" then tbl[sa_key(sc)]=true end
+            end
+          end
+          r.ImGui_PopStyleColor(ctx)
+          r.ImGui_SameLine(ctx, 0, 4)
+          r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Text(), 0xFF8888FF)
+          if r.ImGui_Button(ctx, "Bus##sa_bus"..row_id, 0, 0) then
+            if not ctrl then for _, col in ipairs(sa_cols) do tbl[col.key]=false end end
+            for _, sc in ipairs(active_sc_cache) do
+              if sc.type == "bus" then tbl[sa_key(sc)]=true end
+            end
+          end
+          r.ImGui_PopStyleColor(ctx)
+          r.ImGui_SameLine(ctx, 0, 4)
+          r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Text(), 0xBB88FFFF)
+          if r.ImGui_Button(ctx, "Global##sa_gls"..row_id, 0, 0) then
+            if not ctrl then for _, col in ipairs(sa_cols) do tbl[col.key]=false end end
+            for n = 1, #global_sends do tbl[sa_key_gs(n)]=true end
+          end
+          r.ImGui_PopStyleColor(ctx)
+        end
+        r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Text(), 0xCCCCCCFF)
+        r.ImGui_Text(ctx, "Tracks:")
+        r.ImGui_PopStyleColor(ctx)
+        r.ImGui_SameLine(ctx, 0, 6)
+        sa_sel_row(sa_track, "t")
+        r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Text(), 0xCCCCCCFF)
+        r.ImGui_Text(ctx, "Groups:")
+        r.ImGui_PopStyleColor(ctx)
+        r.ImGui_SameLine(ctx, 0, 6)
+        sa_sel_row(sa_group, "g")
+      end
       r.ImGui_Spacing(ctx)
     end
     if mp and mp.input_label then
@@ -7608,6 +8441,7 @@ local function draw_gui()
   local btn_row_h      = 28
   local num_gs         = #global_sends
   local active_sc      = build_active_send_cols()
+  active_sc_cache = active_sc
   local num_send_cols  = #active_sc
   local fx_col_idx     = 6 + num_send_cols + num_gs
   local total_cols     = fx_col_idx + 1
